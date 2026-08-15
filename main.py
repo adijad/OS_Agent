@@ -1,4 +1,5 @@
-from time import sleep
+import json
+import time
 
 from computer import Computer
 
@@ -6,36 +7,20 @@ from computer import Computer
 def main():
     computer = Computer()
 
-    expected = "Hello World from OS Agent"
+    print("Switch to the window you want me to observe...")
+    print("Observing in 5 seconds...")
 
-    notepad = computer.applications.ensure(
-        title_pattern=r".*Notepad.*",
-        executable="notepad.exe",
+    time.sleep(5)
+
+    observation = computer.observe()
+
+    print(
+        json.dumps(
+            observation,
+            indent=2,
+            ensure_ascii=False,
+        )
     )
-
-    editor = computer.controls.find(
-        notepad,
-        control_type="Document",
-        name="Text editor",
-    )
-
-    computer.input.type_text(
-        editor,
-        expected,
-        clear_first=True,
-    )
-
-    sleep(0.5)
-
-    observed = computer.controls.read_text(editor)
-
-    print(f"Expected: {expected!r}")
-    print(f"Observed: {observed!r}")
-
-    if observed.strip() == expected:
-        print("✅ CHECKPOINT PASSED")
-    else:
-        print("❌ CHECKPOINT FAILED")
 
 
 if __name__ == "__main__":
