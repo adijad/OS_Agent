@@ -10,6 +10,7 @@ class AgentLoop:
         self,
         computer,
         *,
+        model_provider: str | None = None,
         max_steps: int = 25,
     ):
         self.computer = computer
@@ -18,11 +19,61 @@ class AgentLoop:
             computer
         )
 
-        self.model = create_model_provider()
+        self.model = create_model_provider(provider=model_provider)
 
         self.policy = PolicyEngine()
 
         self.max_steps = max_steps
+
+    def _is_stuck(
+        self,
+        history: list[dict],
+    ) -> bool:
+        """
+        Detect obvious repeated action cycles.
+
+        Examples:
+
+            Clear -> Seven -> Clear -> Seven -> Clear -> Seven
+
+        or:
+
+            Clear -> Clear -> Clear -> Clear
+        """
+
+        if len(history) < 6:
+            return False
+
+        recent = []
+
+        for item in history[-6:]:
+            recent.append(
+                (
+                    item["action"].get(
+                        "action"
+                    ),
+                    item.get(
+                        "target_name"
+                    ),
+                )
+            )
+
+        # A B A B A B
+        if (
+            recent[0]
+            == recent[2]
+            == recent[4]
+            and recent[1]
+            == recent[3]
+            == recent[5]
+        ):
+            return True
+
+        # A A A A A A
+        if len(set(recent)) == 1:
+            return True
+
+        return False
 
     def run(self, goal: str):
         history = []
@@ -189,10 +240,22 @@ class AgentLoop:
             "\n❌ Maximum step limit reached."
         )
 
+        if self._is_stuck(history):
+            print(
+                "\n⚠ STUCK: repeating action "
+                "pattern detected."
+            )
+
+            return {
+                "status": "stuck",
+                "history": history,
+            }
+
         return {
             "status": "max_steps",
             "history": history,
         }
+
 
     def _clean_action(
         self,

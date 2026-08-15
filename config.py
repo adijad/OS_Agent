@@ -3,7 +3,9 @@ import os
 from dotenv import load_dotenv
 
 
-load_dotenv(override=True)
+load_dotenv(
+    override=True
+)
 
 
 class Settings:
@@ -13,9 +15,14 @@ class Settings:
             "anthropic",
         ).strip()
 
-        self.model_name = os.getenv(
-            "OS_AGENT_MODEL",
-            "claude-sonnet-4-20250514",
+        self.anthropic_model = os.getenv(
+            "ANTHROPIC_MODEL",
+            "claude-sonnet-5",
+        ).strip()
+
+        self.openai_model = os.getenv(
+            "OPENAI_MODEL",
+            "gpt-5.6",
         ).strip()
 
         anthropic_key = os.getenv(
@@ -28,12 +35,14 @@ class Settings:
             else None
         )
 
-        self.openai_api_key = os.getenv(
+        openai_key = os.getenv(
             "OPENAI_API_KEY"
         )
 
-        self.gemini_api_key = os.getenv(
-            "GEMINI_API_KEY"
+        self.openai_api_key = (
+            openai_key.strip()
+            if openai_key
+            else None
         )
 
 
