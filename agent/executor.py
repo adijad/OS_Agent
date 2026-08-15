@@ -1,8 +1,11 @@
+from .actions import validate_action
+
 class ActionExecutor:
     def __init__(self, computer):
         self.computer = computer
 
     def execute(self, action: dict):
+        action = validate_action(action)
         action_type = action.get("action")
 
         print(f"\nACTION: {action}")

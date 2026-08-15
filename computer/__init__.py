@@ -21,3 +21,23 @@ class Computer:
 
     def screenshot(self):
         return self.screen.capture_active_window()
+
+    def capture_state(self):
+        semantic = self.observe()
+        visual = self.screenshot()
+
+        return {
+            "semantic": semantic,
+            "visual": visual,
+        }
+
+    def cleanup_state(self, state: dict):
+        visual = state.get("visual")
+
+        if not visual:
+            return
+
+        path = visual.get("path")
+
+        if path:
+            self.screen.delete_capture(path)

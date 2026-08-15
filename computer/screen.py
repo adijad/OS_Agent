@@ -1,3 +1,4 @@
+from importlib.resources import path
 from pathlib import Path
 from uuid import uuid4
 
@@ -73,3 +74,16 @@ class ScreenManager:
                 "bottom": bottom,
             },
         }
+
+    def delete_capture(self, path: str):
+        screenshot_path = Path(path)
+
+        try:
+            screenshot_path.unlink(
+                missing_ok=True
+            )
+        except OSError as exc:
+            print(
+                f"Warning: could not delete "
+                f"screenshot {path!r}: {exc}"
+            )

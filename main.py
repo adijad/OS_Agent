@@ -1,40 +1,31 @@
-import json
 import time
 
+from agent.loop import AgentLoop
 from computer import Computer
 
 
 def main():
+    goal = input(
+        "What would you like me to do?\n> "
+    ).strip()
+
+    if not goal:
+        print("No goal provided.")
+        return
+
     computer = Computer()
 
-    print("Switch to the window you want me to observe...")
-    print("Capturing in 5 seconds...")
+    print("\nSwitch to Calculator.")
+    print("The agent starts in 5 seconds...")
 
     time.sleep(5)
 
-    semantic = computer.observe()
-
-    screenshot = computer.screenshot()
-
-    print("\n=== SEMANTIC OBSERVATION ===")
-
-    print(
-        json.dumps(
-            semantic,
-            indent=2,
-            ensure_ascii=False,
-        )
+    agent = AgentLoop(
+        computer,
+        max_steps=15,
     )
 
-    print("\n=== VISUAL OBSERVATION ===")
-
-    print(
-        json.dumps(
-            screenshot,
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
+    agent.run(goal)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,6 @@
 pywinauto
 pywin32
 Pillow
+openai
+anthropic
+dotenv
