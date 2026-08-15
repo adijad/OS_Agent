@@ -1,2 +1,3 @@
 pywinauto
 pywin32
+Pillow
