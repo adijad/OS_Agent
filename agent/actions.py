@@ -4,7 +4,7 @@ VALID_ACTIONS = {
     "press_key",
     "hotkey",
     "focus_window",
-    "launch_application",
+    "open_application",
     "finish",
 }
 
