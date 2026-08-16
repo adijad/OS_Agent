@@ -19,63 +19,18 @@ class AgentLoop:
             computer
         )
 
-        self.model = create_model_provider(provider=model_provider)
+        self.model = create_model_provider(
+            provider=model_provider
+        )
 
         self.policy = PolicyEngine()
 
         self.max_steps = max_steps
 
-    def _is_stuck(
+    def run(
         self,
-        history: list[dict],
-    ) -> bool:
-        """
-        Detect obvious repeated action cycles.
-
-        Examples:
-
-            Clear -> Seven -> Clear -> Seven -> Clear -> Seven
-
-        or:
-
-            Clear -> Clear -> Clear -> Clear
-        """
-
-        if len(history) < 6:
-            return False
-
-        recent = []
-
-        for item in history[-6:]:
-            recent.append(
-                (
-                    item["action"].get(
-                        "action"
-                    ),
-                    item.get(
-                        "target_name"
-                    ),
-                )
-            )
-
-        # A B A B A B
-        if (
-            recent[0]
-            == recent[2]
-            == recent[4]
-            and recent[1]
-            == recent[3]
-            == recent[5]
-        ):
-            return True
-
-        # A A A A A A
-        if len(set(recent)) == 1:
-            return True
-
-        return False
-
-    def run(self, goal: str):
+        goal: str,
+    ):
         history = []
 
         print("\n============================")
@@ -91,24 +46,33 @@ class AgentLoop:
                 f"\n---------- STEP {step} ----------"
             )
 
-            # 1. Capture the current computer state
+            # -------------------------------------------------
+            # 1. Observe current computer state
+            # -------------------------------------------------
+
             state = (
                 self.computer.capture_state()
             )
 
-            # 2. Give the model:
-            #    - current state
-            #    - sanitized history
+            # -------------------------------------------------
+            # 2. Ask the model for exactly one next action
             #
-            # The screenshot is deleted immediately after
-            # the model has finished using it.
+            # We send sanitized history rather than the
+            # full internal trace.
+            #
+            # The temporary screenshot is deleted as soon
+            # as the model has finished using it.
+            # -------------------------------------------------
+
             try:
                 proposed = (
                     self.model.choose_action(
                         goal=goal,
                         state=state,
-                        history=self._history_for_model(
-                            history
+                        history=(
+                            self._history_for_model(
+                                history
+                            )
                         ),
                     )
                 )
@@ -128,8 +92,11 @@ class AgentLoop:
                 f"{proposed.get('action')}"
             )
 
-            # 3. If the model believes the task is complete,
-            #    stop the loop.
+            # -------------------------------------------------
+            # 3. Finish if the model believes the user's
+            #    requested goal is already satisfied.
+            # -------------------------------------------------
+
             if (
                 proposed.get("action")
                 == "finish"
@@ -151,16 +118,24 @@ class AgentLoop:
                     "history": history,
                 }
 
-            # 4. Convert model output into the exact
-            #    action format understood by the executor.
+            # -------------------------------------------------
+            # 4. Convert provider output into our internal
+            #    OS Agent action format.
+            # -------------------------------------------------
+
             action = self._clean_action(
                 proposed
             )
 
-            # 5. Resolve the temporary target ID back
-            #    to its semantic UI control.
+            # -------------------------------------------------
+            # 5. Ground target IDs back to semantic controls.
             #
-            # This is very useful for debugging.
+            # click, type_text, and focus_window may contain
+            # a temporary snapshot target.
+            #
+            # press_key and hotkey do not require a target.
+            # -------------------------------------------------
+
             target_info = (
                 self._get_target_info(
                     action,
@@ -175,7 +150,10 @@ class AgentLoop:
                     f"{target_info['name']!r}"
                 )
 
-            # 6. Run policy + executor
+            # -------------------------------------------------
+            # 6. Policy check + physical execution
+            # -------------------------------------------------
+
             try:
                 self.policy.check(
                     action=action,
@@ -197,20 +175,26 @@ class AgentLoop:
                     ),
                 }
 
-            # 7. Store the full trace internally.
+            # -------------------------------------------------
+            # 7. Store FULL internal trace
             #
-            # The raw action may contain a snapshot-scoped
-            # target ID, which is useful for debugging.
+            # This can keep the raw target ID because it is
+            # useful for debugging.
             #
-            # But _history_for_model() removes those IDs
-            # before sending history back to the model.
+            # _history_for_model() will sanitize it before
+            # sending history back to the LLM.
+            # -------------------------------------------------
+
             history.append(
                 {
                     "step": step,
+
                     "reason": proposed.get(
                         "reason"
                     ),
+
                     "action": action,
+
                     "target_name": (
                         target_info.get(
                             "name"
@@ -218,6 +202,7 @@ class AgentLoop:
                         if target_info
                         else None
                     ),
+
                     "target_role": (
                         target_info.get(
                             "role"
@@ -225,6 +210,7 @@ class AgentLoop:
                         if target_info
                         else None
                     ),
+
                     "result": result,
                 }
             )
@@ -233,76 +219,144 @@ class AgentLoop:
                 f"Result: {result}"
             )
 
-            # Small pause before capturing the new state.
+            # -------------------------------------------------
+            # 8. Detect repeated/stuck behavior IMMEDIATELY
+            #
+            # We do this inside the loop, after every action.
+            #
+            # Example:
+            #
+            # Clear -> Seven -> Clear -> Seven
+            #       -> Clear -> Seven
+            #
+            # should stop here instead of consuming all
+            # 25 model calls.
+            # -------------------------------------------------
+
+            if self._is_stuck(
+                history
+            ):
+                print(
+                    "\n⚠ STUCK: repeating action "
+                    "pattern detected."
+                )
+
+                return {
+                    "status": "stuck",
+                    "history": history,
+                }
+
+            # Give the UI a moment to update before
+            # observing the next state.
             sleep(0.5)
+
+        # -------------------------------------------------
+        # Max steps reached without finish or stuck
+        # -------------------------------------------------
 
         print(
             "\n❌ Maximum step limit reached."
         )
-
-        if self._is_stuck(history):
-            print(
-                "\n⚠ STUCK: repeating action "
-                "pattern detected."
-            )
-
-            return {
-                "status": "stuck",
-                "history": history,
-            }
 
         return {
             "status": "max_steps",
             "history": history,
         }
 
+    # =====================================================
+    # ACTION CLEANING
+    # =====================================================
 
     def _clean_action(
         self,
         proposed: dict,
     ) -> dict:
         """
-        Convert the model response into the exact
-        action dictionary expected by ActionExecutor.
+        Convert the provider's structured response
+        into the exact action dictionary expected
+        by ActionExecutor.
         """
 
-        action_type = proposed["action"]
+        action_type = proposed[
+            "action"
+        ]
 
         action = {
             "action": action_type,
         }
+
+        # -----------------------------
+        # Mouse / semantic target
+        # -----------------------------
 
         if action_type in {
             "click",
             "focus_window",
         }:
             action["target"] = (
-                proposed.get("target")
+                proposed.get(
+                    "target"
+                )
             )
+
+        # -----------------------------
+        # Literal text input
+        # -----------------------------
 
         elif action_type == "type_text":
             action["target"] = (
-                proposed.get("target")
+                proposed.get(
+                    "target"
+                )
             )
 
             action["text"] = (
-                proposed.get("text")
-            )
-
-            if (
-                "clear_first"
-                in proposed
-            ):
-                action["clear_first"] = (
-                    proposed.get(
-                        "clear_first"
-                    )
+                proposed.get(
+                    "text"
                 )
-
-        elif action_type == "press_keys":
-            action["keys"] = (
-                proposed.get("keys")
             )
+
+            action["clear_first"] = bool(
+                proposed.get(
+                    "clear_first",
+                    False,
+                )
+            )
+
+        # -----------------------------
+        # One semantic special key
+        #
+        # Example:
+        # ENTER
+        # TAB
+        # ESC
+        # -----------------------------
+
+        elif action_type == "press_key":
+            action["key"] = (
+                proposed.get(
+                    "key"
+                )
+            )
+
+        # -----------------------------
+        # Structured keyboard shortcut
+        #
+        # Example:
+        # ["CTRL", "L"]
+        # ["CTRL", "SHIFT", "S"]
+        # -----------------------------
+
+        elif action_type == "hotkey":
+            action["keys"] = (
+                proposed.get(
+                    "keys"
+                )
+            )
+
+        # -----------------------------
+        # Application launch
+        # -----------------------------
 
         elif (
             action_type
@@ -316,37 +370,43 @@ class AgentLoop:
 
         return action
 
+    # =====================================================
+    # TARGET GROUNDING
+    # =====================================================
+
     def _get_target_info(
         self,
         action: dict,
         state: dict,
     ):
         """
-        Given the model's chosen target ID,
-        find the actual semantic control from
-        the CURRENT snapshot.
+        Resolve the model's CURRENT snapshot target ID
+        back to its semantic control/window.
 
-        This lets us verify things like:
+        This lets us detect grounding problems such as:
 
-        Model says:
-            "Click Nine"
+            Reason:
+                Click Nine
 
-        Model target ID actually points to:
-            Button 'Seven'
-
-        which would reveal a model grounding error.
+            Actual selected target:
+                Button 'Seven'
         """
 
         target_id = action.get(
             "target"
         )
 
+        # Keyboard actions such as press_key/hotkey
+        # do not have semantic target IDs.
         if not target_id:
             return None
 
         controls = (
             state["semantic"]
-            .get("controls", [])
+            .get(
+                "controls",
+                [],
+            )
         )
 
         for control in controls:
@@ -356,19 +416,23 @@ class AgentLoop:
             ):
                 return {
                     "id": target_id,
+
                     "name": control.get(
                         "name"
                     ),
+
                     "role": control.get(
                         "role"
                     ),
                 }
 
-        # The target may also be a window,
-        # for example with focus_window.
+        # Target may also be a top-level window.
         windows = (
             state["semantic"]
-            .get("windows", [])
+            .get(
+                "windows",
+                [],
+            )
         )
 
         for window in windows:
@@ -378,61 +442,324 @@ class AgentLoop:
             ):
                 return {
                     "id": target_id,
+
                     "name": window.get(
                         "title"
                     ),
+
                     "role": "Window",
                 }
 
         return None
+
+    # =====================================================
+    # MODEL HISTORY
+    # =====================================================
 
     def _history_for_model(
         self,
         history: list[dict],
     ) -> list[dict]:
         """
-        Build a compact history for the model.
+        Build compact history for the model.
 
-        IMPORTANT:
-        We deliberately do NOT send old target IDs.
+        Important:
 
-        Target IDs are snapshot-scoped, so an ID like:
+        We DO NOT send old snapshot target IDs.
 
-            abc123:control:42
+        Those IDs expire after every new observation.
 
-        becomes invalid as soon as the next observation
-        is captured.
+        We DO send semantic information such as:
 
-        Sending old IDs back to the model was confusing it.
+            click Button 'Nine'
+
+            type_text "24+83"
+
+            press_key ENTER
+
+            hotkey CTRL+L
+
+        This gives the model useful historical context
+        without exposing stale references.
         """
 
         model_history = []
 
         for item in history[-6:]:
+            action = item[
+                "action"
+            ]
+
+            action_type = action.get(
+                "action"
+            )
+
+            entry = {
+                "step": item[
+                    "step"
+                ],
+
+                "action": action_type,
+
+                "target_name": (
+                    item.get(
+                        "target_name"
+                    )
+                ),
+
+                "target_role": (
+                    item.get(
+                        "target_role"
+                    )
+                ),
+
+                "executor_status": (
+                    item["result"]
+                    .get(
+                        "status"
+                    )
+                ),
+            }
+
+            # -----------------------------------------
+            # Preserve keyboard/text semantics
+            # -----------------------------------------
+
+            if action_type == "type_text":
+                entry["text"] = (
+                    action.get(
+                        "text"
+                    )
+                )
+
+            elif (
+                action_type
+                == "press_key"
+            ):
+                entry["key"] = (
+                    action.get(
+                        "key"
+                    )
+                )
+
+            elif (
+                action_type
+                == "hotkey"
+            ):
+                entry["keys"] = (
+                    action.get(
+                        "keys"
+                    )
+                )
+
+            elif (
+                action_type
+                == "launch_application"
+            ):
+                entry[
+                    "executable"
+                ] = action.get(
+                    "executable"
+                )
+
             model_history.append(
-                {
-                    "step": item[
-                        "step"
-                    ],
-                    "action": (
-                        item["action"]
-                        .get("action")
-                    ),
-                    "target_name": (
-                        item.get(
-                            "target_name"
-                        )
-                    ),
-                    "target_role": (
-                        item.get(
-                            "target_role"
-                        )
-                    ),
-                    "executor_status": (
-                        item["result"]
-                        .get("status")
-                    ),
-                }
+                entry
             )
 
         return model_history
+
+    # =====================================================
+    # ACTION SIGNATURE
+    # =====================================================
+
+    def _action_signature(
+        self,
+        item: dict,
+    ):
+        """
+        Create a comparable semantic representation
+        of an action.
+
+        This is used by stuck detection.
+
+        We cannot simply compare:
+
+            action type + target_name
+
+        because keyboard actions do not necessarily
+        have targets.
+
+        Examples:
+
+            click Nine
+                -> ("click", "Nine")
+
+            type_text "24+83"
+                -> ("type_text", "Calculator", "24+83")
+
+            press_key ENTER
+                -> ("press_key", "ENTER")
+
+            hotkey CTRL+L
+                -> ("hotkey", ("CTRL", "L"))
+        """
+
+        action = item[
+            "action"
+        ]
+
+        action_type = action.get(
+            "action"
+        )
+
+        # -----------------------------
+        # Target-based actions
+        # -----------------------------
+
+        if action_type in {
+            "click",
+            "focus_window",
+        }:
+            return (
+                action_type,
+                item.get(
+                    "target_name"
+                ),
+            )
+
+        # -----------------------------
+        # Text input
+        # -----------------------------
+
+        if action_type == "type_text":
+            return (
+                action_type,
+
+                item.get(
+                    "target_name"
+                ),
+
+                action.get(
+                    "text"
+                ),
+            )
+
+        # -----------------------------
+        # Single key
+        # -----------------------------
+
+        if action_type == "press_key":
+            return (
+                action_type,
+                action.get(
+                    "key"
+                ),
+            )
+
+        # -----------------------------
+        # Hotkey
+        # -----------------------------
+
+        if action_type == "hotkey":
+            return (
+                action_type,
+
+                tuple(
+                    action.get(
+                        "keys"
+                    )
+                    or []
+                ),
+            )
+
+        # -----------------------------
+        # Launch
+        # -----------------------------
+
+        if (
+            action_type
+            == "launch_application"
+        ):
+            return (
+                action_type,
+
+                action.get(
+                    "executable"
+                ),
+            )
+
+        return (
+            action_type,
+        )
+
+    # =====================================================
+    # STUCK DETECTION
+    # =====================================================
+
+    def _is_stuck(
+        self,
+        history: list[dict],
+    ) -> bool:
+        """
+        Detect obvious repeated action cycles.
+
+        Pattern 1:
+
+            A B A B A B
+
+        Example:
+
+            Seven
+            Clear
+            Seven
+            Clear
+            Seven
+            Clear
+
+
+        Pattern 2:
+
+            A A A A A A
+
+        Example:
+
+            press_key ENTER
+            press_key ENTER
+            press_key ENTER
+            ...
+        """
+
+        if len(history) < 6:
+            return False
+
+        recent = [
+            self._action_signature(
+                item
+            )
+            for item
+            in history[-6:]
+        ]
+
+        # -----------------------------------------
+        # A B A B A B
+        # -----------------------------------------
+
+        if (
+            recent[0]
+            == recent[2]
+            == recent[4]
+            and
+            recent[1]
+            == recent[3]
+            == recent[5]
+        ):
+            return True
+
+        # -----------------------------------------
+        # A A A A A A
+        # -----------------------------------------
+
+        if len(set(recent)) == 1:
+            return True
+
+        return False

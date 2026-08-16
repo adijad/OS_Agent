@@ -18,6 +18,10 @@ PROVIDERS = [
 ]
 
 
+# =========================================================
+# NORMALIZATION
+# =========================================================
+
 def normalize_number(
     value: str | None,
 ):
@@ -32,14 +36,21 @@ def normalize_number(
     )
 
 
+# =========================================================
+# BENCHMARK SETUP
+# =========================================================
+
 def prepare_calculator(
     computer: Computer,
 ):
     """
     Benchmark setup only.
 
-    Ensure Calculator is open/focused,
+    Ensure Calculator is open and focused,
     then clear it before each case.
+
+    These setup actions are not counted
+    as agent actions.
     """
 
     computer.applications.ensure(
@@ -88,12 +99,42 @@ def prepare_calculator(
     time.sleep(0.4)
 
 
-def read_calculator_display(
+# =========================================================
+# CALCULATOR STATE
+# =========================================================
+
+def read_calculator_state(
     computer: Computer,
 ):
+    """
+    Read both:
+
+        current display
+        current expression
+
+    Example:
+
+        display:
+            38,346
+
+        expression:
+            Expression is 913 × 42 =
+
+    This lets us distinguish:
+
+        merely entering a number
+
+    from:
+
+        actually completing the calculation.
+    """
+
     observation = (
         computer.observe()
     )
+
+    display = None
+    expression = None
 
     for control in observation[
         "controls"
@@ -101,17 +142,88 @@ def read_calculator_display(
         name = control.get(
             "name",
             "",
-        )
+        ).strip()
+
+        text = control.get(
+            "text",
+            "",
+        ).strip()
+
+        # ---------------------------------------------
+        # Calculator main display
+        # ---------------------------------------------
 
         if name.startswith(
             "Display is "
         ):
-            return name.removeprefix(
-                "Display is "
+            display = (
+                name.removeprefix(
+                    "Display is "
+                )
             )
 
-    return None
+        # ---------------------------------------------
+        # Calculator expression
+        # ---------------------------------------------
 
+        if name.startswith(
+            "Expression is "
+        ):
+            expression = name
+
+        elif (
+            expression is None
+            and text.startswith(
+                "Expression is "
+            )
+        ):
+            expression = text
+
+    return {
+        "display": display,
+        "expression": expression,
+    }
+
+
+def expression_is_complete(
+    expression: str | None,
+):
+    """
+    Determine whether Calculator appears to have
+    actually evaluated the expression.
+
+    Typical completed expression:
+
+        Expression is 913 × 42 =
+
+    We intentionally require evidence of completion
+    instead of trusting only the displayed number.
+    """
+
+    if not expression:
+        return False
+
+    normalized = (
+        expression
+        .strip()
+        .lower()
+    )
+
+    # Standard Calculator accessibility state.
+    if normalized.endswith("="):
+        return True
+
+    # Defensive fallback in case accessibility text
+    # describes '=' using a word.
+    if normalized.endswith("equals"):
+        return True
+
+    return False
+
+
+# =========================================================
+# ACTION METRICS
+# =========================================================
 
 def count_clear_actions(
     history: list[dict],
@@ -129,6 +241,42 @@ def count_clear_actions(
     )
 
 
+def count_action_types(
+    history: list[dict],
+):
+    counts = {
+        "click": 0,
+        "type_text": 0,
+        "press_key": 0,
+        "hotkey": 0,
+        "focus_window": 0,
+        "launch_application": 0,
+    }
+
+    for item in history:
+        action_type = (
+            item
+            .get(
+                "action",
+                {},
+            )
+            .get(
+                "action"
+            )
+        )
+
+        if action_type in counts:
+            counts[
+                action_type
+            ] += 1
+
+    return counts
+
+
+# =========================================================
+# RUN ONE CASE
+# =========================================================
+
 def run_case(
     computer: Computer,
     provider: str,
@@ -138,22 +286,37 @@ def run_case(
         "\n\n"
         "======================================"
     )
+
     print(
-        f"PROVIDER: {provider.upper()}"
+        f"PROVIDER: "
+        f"{provider.upper()}"
     )
+
     print(
-        f"CASE: {case['id']}"
+        f"CASE: "
+        f"{case['id']}"
     )
+
     print(
-        f"GOAL: {case['goal']}"
+        f"GOAL: "
+        f"{case['goal']}"
     )
+
     print(
         "======================================"
     )
 
+    # -----------------------------------------------------
+    # Prepare clean benchmark environment
+    # -----------------------------------------------------
+
     prepare_calculator(
         computer
     )
+
+    # -----------------------------------------------------
+    # Create requested model agent
+    # -----------------------------------------------------
 
     agent = AgentLoop(
         computer,
@@ -165,6 +328,10 @@ def run_case(
         time.perf_counter()
     )
 
+    # -----------------------------------------------------
+    # Run autonomous trajectory
+    # -----------------------------------------------------
+
     try:
         result = agent.run(
             case["goal"]
@@ -174,7 +341,9 @@ def run_case(
 
     except Exception as exc:
         result = {
-            "status": "runtime_error",
+            "status":
+                "runtime_error",
+
             "history": [],
         }
 
@@ -188,13 +357,39 @@ def run_case(
         - started
     )
 
-    actual = (
-        read_calculator_display(
+    # -----------------------------------------------------
+    # Independently inspect Calculator after agent stops
+    # -----------------------------------------------------
+
+    calculator_state = (
+        read_calculator_state(
             computer
         )
     )
 
-    expected = (
+    actual = (
+        calculator_state[
+            "display"
+        ]
+    )
+
+    expression = (
+        calculator_state[
+            "expression"
+        ]
+    )
+
+    completed_expression = (
+        expression_is_complete(
+            expression
+        )
+    )
+
+    # -----------------------------------------------------
+    # Normalize expected / observed result
+    # -----------------------------------------------------
+
+    expected_normalized = (
         normalize_number(
             case["expected"]
         )
@@ -206,45 +401,134 @@ def run_case(
         )
     )
 
+    # -----------------------------------------------------
+    # Trajectory metrics
+    # -----------------------------------------------------
+
     history = result.get(
         "history",
         [],
     )
 
+    action_types = (
+        count_action_types(
+            history
+        )
+    )
+
+    # -----------------------------------------------------
+    # STRICT PASS CONDITION
+    #
+    # We now require:
+    #
+    # 1. Agent declared success
+    # 2. Display matches expected answer
+    # 3. Expression indicates evaluation completed
+    #
+    # This prevents false positives such as:
+    #
+    #     144 ÷ 12
+    #
+    # where the current divisor is 12 and also happens
+    # to equal the expected answer.
+    # -----------------------------------------------------
+
     passed = (
         result.get("status")
         == "success"
+
         and actual_normalized
-        == expected
+        == expected_normalized
+
+        and completed_expression
     )
 
     return {
         "provider": provider,
-        "case": case["id"],
-        "goal": case["goal"],
+
+        "case": case[
+            "id"
+        ],
+
+        "goal": case[
+            "goal"
+        ],
+
         "passed": passed,
+
         "expected": case[
             "expected"
         ],
+
         "actual": actual,
-        "agent_status": result.get(
-            "status"
-        ),
+
+        "expression":
+            expression,
+
+        "expression_complete":
+            completed_expression,
+
+        "agent_status":
+            result.get(
+                "status"
+            ),
+
         "action_count": len(
             history
         ),
+
         "clear_actions":
             count_clear_actions(
                 history
             ),
+
+        # ---------------------------------------------
+        # Interaction strategy
+        # ---------------------------------------------
+
+        "click_actions":
+            action_types[
+                "click"
+            ],
+
+        "type_text_actions":
+            action_types[
+                "type_text"
+            ],
+
+        "press_key_actions":
+            action_types[
+                "press_key"
+            ],
+
+        "hotkey_actions":
+            action_types[
+                "hotkey"
+            ],
+
+        "focus_window_actions":
+            action_types[
+                "focus_window"
+            ],
+
+        "launch_application_actions":
+            action_types[
+                "launch_application"
+            ],
+
         "elapsed_seconds": round(
             elapsed,
             2,
         ),
+
         "runtime_error":
             runtime_error,
     }
 
+
+# =========================================================
+# SUMMARY
+# =========================================================
 
 def print_summary(
     results: list[dict],
@@ -253,9 +537,11 @@ def print_summary(
         "\n\n"
         "======================================"
     )
+
     print(
         "MODEL COMPARISON SUMMARY"
     )
+
     print(
         "======================================"
     )
@@ -264,7 +550,9 @@ def print_summary(
         provider_results = [
             result
             for result in results
-            if result["provider"]
+            if result[
+                "provider"
+            ]
             == provider
         ]
 
@@ -272,7 +560,9 @@ def print_summary(
             continue
 
         passed = sum(
-            result["passed"]
+            result[
+                "passed"
+            ]
             for result
             in provider_results
         )
@@ -282,19 +572,73 @@ def print_summary(
         )
 
         actions = sum(
-            result["action_count"]
+            result[
+                "action_count"
+            ]
             for result
             in provider_results
         )
 
         clears = sum(
-            result["clear_actions"]
+            result[
+                "clear_actions"
+            ]
             for result
             in provider_results
         )
 
         elapsed = sum(
-            result["elapsed_seconds"]
+            result[
+                "elapsed_seconds"
+            ]
+            for result
+            in provider_results
+        )
+
+        clicks = sum(
+            result[
+                "click_actions"
+            ]
+            for result
+            in provider_results
+        )
+
+        type_texts = sum(
+            result[
+                "type_text_actions"
+            ]
+            for result
+            in provider_results
+        )
+
+        press_keys = sum(
+            result[
+                "press_key_actions"
+            ]
+            for result
+            in provider_results
+        )
+
+        hotkeys = sum(
+            result[
+                "hotkey_actions"
+            ]
+            for result
+            in provider_results
+        )
+
+        focus_windows = sum(
+            result[
+                "focus_window_actions"
+            ]
+            for result
+            in provider_results
+        )
+
+        launches = sum(
+            result[
+                "launch_application_actions"
+            ]
             for result
             in provider_results
         )
@@ -303,12 +647,18 @@ def print_summary(
             f"\n{provider.upper()}"
         )
 
+        # -------------------------------------------------
+        # Individual cases
+        # -------------------------------------------------
+
         for result in (
             provider_results
         ):
             icon = (
                 "✅"
-                if result["passed"]
+                if result[
+                    "passed"
+                ]
                 else "❌"
             )
 
@@ -328,6 +678,44 @@ def print_summary(
                 f"time="
                 f"{result['elapsed_seconds']}s"
             )
+
+            print(
+                "    Expression: "
+                f"{result['expression']!r}"
+            )
+
+            print(
+                "    Expression complete: "
+                f"{result['expression_complete']}"
+            )
+
+            print(
+                "    Action mix: "
+                f"click="
+                f"{result['click_actions']}, "
+                f"type_text="
+                f"{result['type_text_actions']}, "
+                f"press_key="
+                f"{result['press_key_actions']}, "
+                f"hotkey="
+                f"{result['hotkey_actions']}, "
+                f"focus="
+                f"{result['focus_window_actions']}"
+            )
+
+            if result[
+                "runtime_error"
+            ]:
+                print(
+                    "    Runtime error: "
+                    f"{result['runtime_error']}"
+                )
+
+        # -------------------------------------------------
+        # Provider totals
+        # -------------------------------------------------
+
+        print()
 
         print(
             f"Success rate: "
@@ -350,6 +738,44 @@ def print_summary(
             f"{elapsed / total:.2f}s"
         )
 
+        print(
+            "Action mix:"
+        )
+
+        print(
+            f"  Click: "
+            f"{clicks}"
+        )
+
+        print(
+            f"  Type text: "
+            f"{type_texts}"
+        )
+
+        print(
+            f"  Press key: "
+            f"{press_keys}"
+        )
+
+        print(
+            f"  Hotkey: "
+            f"{hotkeys}"
+        )
+
+        print(
+            f"  Focus window: "
+            f"{focus_windows}"
+        )
+
+        print(
+            f"  Launch application: "
+            f"{launches}"
+        )
+
+
+# =========================================================
+# SAVE RESULTS
+# =========================================================
 
 def save_results(
     results: list[dict],
@@ -372,7 +798,10 @@ def save_results(
 
     path = (
         output_dir
-        / f"model_comparison_{timestamp}.json"
+        / (
+            "model_comparison_"
+            f"{timestamp}.json"
+        )
     )
 
     path.write_text(
@@ -384,12 +813,19 @@ def save_results(
     )
 
     print(
-        f"\nResults saved to: {path}"
+        f"\nResults saved to: "
+        f"{path}"
     )
 
 
+# =========================================================
+# MAIN
+# =========================================================
+
 def main():
-    parser = argparse.ArgumentParser()
+    parser = (
+        argparse.ArgumentParser()
+    )
 
     parser.add_argument(
         "--smoke",
@@ -400,7 +836,9 @@ def main():
         ),
     )
 
-    args = parser.parse_args()
+    args = (
+        parser.parse_args()
+    )
 
     cases = (
         CALCULATOR_CASES[:1]

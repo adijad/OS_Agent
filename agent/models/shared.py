@@ -10,6 +10,42 @@ You receive:
 
 Your responsibility is to propose exactly ONE next action.
 
+You can freely choose between mouse and keyboard interaction.
+Choose whichever method is appropriate, reliable, and efficient
+for the current state.
+
+Available interaction actions:
+
+click:
+    Click one currently observed semantic target.
+
+type_text:
+    Type literal text into a currently observed target.
+    The text is typed exactly as supplied.
+    Do NOT encode ENTER, TAB, CTRL, or other special keys
+    inside the text.
+
+press_key:
+    Press one special semantic key such as ENTER, ESC, TAB,
+    BACKSPACE, DELETE, or an arrow key.
+
+hotkey:
+    Execute a keyboard shortcut as a list of semantic keys.
+    Examples:
+        ["CTRL", "L"]
+        ["CTRL", "SHIFT", "S"]
+        ["ALT", "F4"]
+        ["WIN", "E"]
+
+focus_window:
+    Focus one currently observed window.
+
+launch_application:
+    Launch an application when permitted.
+
+finish:
+    Use when the user's requested goal has been achieved.
+
 Important behavior:
 
 - Base your action primarily on the CURRENT observed state.
@@ -23,7 +59,6 @@ Important behavior:
   without an execution error. It does not prove the intended UI result occurred.
 - The CURRENT observed environment is the source of truth.
 - Previous action history is supporting context, not ground truth.
-- Prefer semantic UI controls when an appropriate control is available.
 - Treat partial progress toward the user's goal as valid progress.
 - Do not clear, undo, restart, or repeat work merely because the goal
   is not yet complete.
@@ -33,6 +68,8 @@ Important behavior:
   the intended task.
 - If the user's goal has already been achieved, use finish.
 - Do not perform unnecessary actions after the goal is achieved.
+- Do not prefer mouse over keyboard or keyboard over mouse by default.
+  Choose based on the current task and state.
 
 Provide only a short action rationale.
 Do not provide a long reasoning trace.
@@ -40,10 +77,8 @@ Do not provide a long reasoning trace.
 
 
 ACTION_DESCRIPTION = (
-    "Propose exactly one action for OS Agent to perform "
-    "on the currently observed Windows state. The action "
-    "must be grounded in the supplied current semantic state. "
-    "Use finish when the user's requested goal has been achieved."
+    "Propose exactly one semantic action for OS Agent "
+    "to perform on the currently observed Windows state."
 )
 
 
@@ -53,45 +88,114 @@ ACTION_INPUT_SCHEMA = {
         "reason": {
             "type": "string",
         },
+
         "action": {
             "type": "string",
             "enum": [
                 "click",
                 "type_text",
-                "press_keys",
+                "press_key",
+                "hotkey",
                 "focus_window",
                 "launch_application",
                 "finish",
             ],
         },
+
         "target": {
-            "type": ["string", "null"],
+            "type": [
+                "string",
+                "null",
+            ],
         },
+
         "text": {
-            "type": ["string", "null"],
+            "type": [
+                "string",
+                "null",
+            ],
         },
+
+        "key": {
+            "type": [
+                "string",
+                "null",
+            ],
+            "enum": [
+                "ENTER",
+                "ESC",
+                "TAB",
+                "BACKSPACE",
+                "DELETE",
+                "SPACE",
+                "LEFT",
+                "RIGHT",
+                "UP",
+                "DOWN",
+                "HOME",
+                "END",
+                "PAGEUP",
+                "PAGEDOWN",
+                "INSERT",
+                "F1",
+                "F2",
+                "F3",
+                "F4",
+                "F5",
+                "F6",
+                "F7",
+                "F8",
+                "F9",
+                "F10",
+                "F11",
+                "F12",
+                None,
+            ],
+        },
+
         "keys": {
-            "type": ["string", "null"],
+            "type": [
+                "array",
+                "null",
+            ],
+            "items": {
+                "type": "string",
+            },
         },
+
         "executable": {
-            "type": ["string", "null"],
+            "type": [
+                "string",
+                "null",
+            ],
         },
+
         "answer": {
-            "type": ["string", "null"],
+            "type": [
+                "string",
+                "null",
+            ],
         },
+
         "clear_first": {
-            "type": ["boolean", "null"],
+            "type": [
+                "boolean",
+                "null",
+            ],
         },
     },
+
     "required": [
         "reason",
         "action",
         "target",
         "text",
+        "key",
         "keys",
         "executable",
         "answer",
         "clear_first",
     ],
+
     "additionalProperties": False,
 }
