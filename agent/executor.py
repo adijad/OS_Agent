@@ -51,10 +51,10 @@ class ActionExecutor:
 
         if (
             action_type
-            == "launch_application"
+            == "open_application"
         ):
             return (
-                self._launch_application(
+                self._open_application(
                     action
                 )
             )
@@ -186,22 +186,21 @@ class ActionExecutor:
             "action": "focus_window",
         }
 
-    def _launch_application(
+    def _open_application(
         self,
         action,
     ):
-        executable = action[
-            "executable"
+        application = action[
+            "application"
         ]
 
-        self.computer.applications.launch(
-            executable
+        return (
+            self.computer
+            .applications
+            .open_application(
+                application,
+                input_manager=(
+                    self.computer.input
+                ),
+            )
         )
-
-        return {
-            "status": "success",
-            "action":
-                "launch_application",
-            "executable":
-                executable,
-        }

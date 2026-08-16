@@ -94,6 +94,32 @@ class InputManager:
             pause=0.03,
         )
 
+    def type_text_global(
+        self,
+        text: str,
+    ):
+        """
+        Type literal text into whatever control
+        currently owns keyboard focus.
+
+        Useful for operating system surfaces such
+        as Windows Start/Search.
+        """
+
+        escaped_text = (
+            self._escape_literal_text(
+                text
+            )
+        )
+
+        send_keys(
+            escaped_text,
+            with_spaces=True,
+            with_tabs=True,
+            with_newlines=True,
+            pause=0.03,
+        )
+
     def press_key(
         self,
         key: str,

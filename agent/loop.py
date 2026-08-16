@@ -360,11 +360,11 @@ class AgentLoop:
 
         elif (
             action_type
-            == "launch_application"
+            == "open_application"
         ):
-            action["executable"] = (
+            action["application"] = (
                 proposed.get(
-                    "executable"
+                    "application"
                 )
             )
 
@@ -554,12 +554,12 @@ class AgentLoop:
 
             elif (
                 action_type
-                == "launch_application"
+                == "open_application"
             ):
                 entry[
-                    "executable"
+                    "application"
                 ] = action.get(
-                    "executable"
+                    "application"
                 )
 
             model_history.append(
@@ -678,13 +678,12 @@ class AgentLoop:
 
         if (
             action_type
-            == "launch_application"
+            == "open_application"
         ):
             return (
                 action_type,
-
                 action.get(
-                    "executable"
+                    "application"
                 ),
             )
 

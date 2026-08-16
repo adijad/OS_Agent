@@ -87,10 +87,10 @@ def validate_action(action: dict):
             action["keys"]
         )
 
-    elif action_type == "launch_application":
+    elif action_type == "open_application":
         _require(
             action,
-            "executable",
+            "application",
         )
 
     return action

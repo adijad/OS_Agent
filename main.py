@@ -1,5 +1,3 @@
-import time
-
 from agent.loop import AgentLoop
 from computer import Computer
 
@@ -10,22 +8,21 @@ def main():
     ).strip()
 
     if not goal:
-        print("No goal provided.")
+        print(
+            "No goal provided."
+        )
         return
 
     computer = Computer()
 
-    print("\nSwitch to Calculator.")
-    print("The agent starts in 5 seconds...")
-
-    time.sleep(5)
-
     agent = AgentLoop(
         computer,
-        max_steps=15,
+        max_steps=20,
     )
 
-    agent.run(goal)
+    agent.run(
+        goal
+    )
 
 
 if __name__ == "__main__":

@@ -9,24 +9,45 @@ class PolicyEngine:
         action: dict,
         state: dict,
     ):
-        action_type = action["action"]
+        """
+        Basic general-purpose autonomous policy.
 
-        semantic = state["semantic"]
+        At this stage our available actions are
+        low-level computer interaction primitives.
 
-        active_window = semantic.get(
-            "active_window"
-        )
+        Consequential semantic actions such as
+        purchases, sending messages, deleting files,
+        or changing security settings will receive
+        stronger approval rules later.
+        """
 
-        # Application launching stays disabled
-        # during the Calculator benchmark.
-        if action_type == "launch_application":
-            raise PolicyViolationError(
-                "Application launching is disabled "
-                "during the Calculator benchmark."
-            )
+        action_type = action[
+            "action"
+        ]
 
-        # Allow recovery when Calculator lost focus.
-        if action_type == "focus_window":
+        semantic = state[
+            "semantic"
+        ]
+
+        # ---------------------------------------------
+        # Opening an application is currently allowed.
+        # ---------------------------------------------
+
+        if (
+            action_type
+            == "open_application"
+        ):
+            return True
+
+        # ---------------------------------------------
+        # focus_window must refer to a window from
+        # the CURRENT observation.
+        # ---------------------------------------------
+
+        if (
+            action_type
+            == "focus_window"
+        ):
             target_id = action.get(
                 "target"
             )
@@ -35,43 +56,24 @@ class PolicyEngine:
                 "windows",
                 [],
             ):
-                if window.get("id") != target_id:
-                    continue
-
-                title = window.get(
-                    "title",
-                    "",
-                )
-
-                if "Calculator" in title:
+                if (
+                    window.get("id")
+                    == target_id
+                ):
                     return True
-
-                raise PolicyViolationError(
-                    "The agent may only focus "
-                    "Calculator during this benchmark."
-                )
 
             raise PolicyViolationError(
                 "Requested focus target "
-                "was not found."
+                "was not found in the "
+                "current observation."
             )
 
-        # Normal interactions require Calculator
-        # to currently be active.
-        if not active_window:
-            raise PolicyViolationError(
-                "No active window was observed."
-            )
-
-        title = active_window.get(
-            "title",
-            "",
-        )
-
-        if "Calculator" not in title:
-            raise PolicyViolationError(
-                "Autonomous execution is currently "
-                "restricted to Calculator."
-            )
+        # ---------------------------------------------
+        # Other actions remain permitted for now.
+        #
+        # Target validation / stale target rejection
+        # still occurs in the executor / observation
+        # system.
+        # ---------------------------------------------
 
         return True
