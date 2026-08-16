@@ -39,6 +39,14 @@ SPECIAL_KEYS = {
     "F12",
 }
 
+HOTKEY_PRINTABLE_KEYS = {
+    "-",
+    "=",
+    "+",
+    ",",
+    ".",
+    "/",
+}
 
 MODIFIER_KEYS = {
     "CTRL",
@@ -191,6 +199,7 @@ def _validate_hotkey(
     if (
         len(final_key) == 1
         and final_key.isalnum()
+        or final_key in HOTKEY_PRINTABLE_KEYS
     ):
         return
 

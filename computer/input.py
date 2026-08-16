@@ -42,6 +42,14 @@ MODIFIER_TOKENS = {
     "SHIFT": "+",
 }
 
+HOTKEY_PRINTABLE_TOKENS = {
+    "-": "{-}",
+    "=": "{=}",
+    "+": "{+}",
+    ",": "{,}",
+    ".": "{.}",
+    "/": "{/}",
+}
 
 LITERAL_ESCAPE_MAP = {
     "{": "{{}",
@@ -297,6 +305,13 @@ class InputManager:
         if key in SPECIAL_KEY_TOKENS:
             return (
                 SPECIAL_KEY_TOKENS[
+                    key
+                ]
+            )
+
+        if key in HOTKEY_PRINTABLE_TOKENS:
+            return (
+                HOTKEY_PRINTABLE_TOKENS[
                     key
                 ]
             )
