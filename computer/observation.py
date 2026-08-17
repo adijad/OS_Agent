@@ -151,6 +151,14 @@ class ObservationManager:
                     if text:
                         control_data["text"] = text
 
+                    value = self._try_read_value(
+                        control,
+                        max_chars=max_text_chars,
+                    )
+
+                    if value:
+                        control_data["value"] = value
+
                     controls.append(control_data)
 
                     # IMPORTANT:
@@ -238,6 +246,40 @@ class ObservationManager:
             text = text.strip()
 
             return text or None
+
+        except Exception:
+            return None
+
+    def _try_read_value(
+        self,
+        control,
+        max_chars: int = 500,
+    ):
+        """
+        Try to retrieve a control's current UIA value.
+
+        This is especially useful for single-line Edit
+        controls such as browser address bars, search
+        fields, file-name inputs, and similar controls.
+        """
+
+        try:
+            value_pattern = control.iface_value
+
+            value = (
+                value_pattern
+                .CurrentValue
+            )
+
+            if value is None:
+                return None
+
+            value = str(value).strip()
+
+            if not value:
+                return None
+
+            return value[:max_chars]
 
         except Exception:
             return None
