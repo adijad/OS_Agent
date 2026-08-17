@@ -12,6 +12,11 @@ from .shared import (
     SYSTEM_PROMPT,
 )
 
+from .result import (
+    ModelCallResult,
+    ModelUsage,
+)
+
 ACTION_TOOL = {
     "name": "computer_action",
     "description": ACTION_DESCRIPTION,
@@ -84,12 +89,75 @@ class AnthropicProvider(ModelProvider):
             },
         )
 
+        usage = response.usage
+
+        input_tokens = (
+            getattr(
+                usage,
+                "input_tokens",
+                0,
+            )
+            or 0
+        )
+
+        output_tokens = (
+            getattr(
+                usage,
+                "output_tokens",
+                0,
+            )
+            or 0
+        )
+
+        cached_input_tokens = (
+            getattr(
+                usage,
+                "cache_read_input_tokens",
+                0,
+            )
+            or 0
+        )
+
+        cache_creation_input_tokens = (
+            getattr(
+                usage,
+                "cache_creation_input_tokens",
+                0,
+            )
+            or 0
+        )
+
+        model_usage = ModelUsage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+
+            total_tokens=(
+                input_tokens
+                + output_tokens
+                + cached_input_tokens
+                + cache_creation_input_tokens
+            ),
+
+            cached_input_tokens=(
+                cached_input_tokens
+            ),
+
+            cache_creation_input_tokens=(
+                cache_creation_input_tokens
+            ),
+        )
+
         for block in response.content:
             if (
                 block.type == "tool_use"
                 and block.name == "computer_action"
             ):
-                return block.input
+                return ModelCallResult(
+                    action=block.input,
+                    provider="anthropic",
+                    model=response.model,
+                    usage=model_usage
+                )
 
         raise RuntimeError(
             "Claude did not return a computer action."

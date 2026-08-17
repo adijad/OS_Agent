@@ -1,9 +1,18 @@
-from time import sleep
-
 from .executor import ActionExecutor
 from .models import create_model_provider
 from .policy import PolicyEngine
+from time import (
+    perf_counter,
+    sleep,
+)
 
+from observability import (
+    get_tracer,
+)
+
+tracer = get_tracer(
+    "os_agent.agent"
+)
 
 class AgentLoop:
     def __init__(
@@ -65,17 +74,89 @@ class AgentLoop:
             # -------------------------------------------------
 
             try:
-                proposed = (
-                    self.model.choose_action(
-                        goal=goal,
-                        state=state,
-                        history=(
-                            self._history_for_model(
-                                history
-                            )
+                with tracer.start_as_current_span(
+                    "os_agent.model.choose_action"
+                ) as model_span:
+
+                    started = perf_counter()
+
+                    model_result = (
+                        self.model.choose_action(
+                            goal=goal,
+                            state=state,
+                            history=(
+                                self._history_for_model(
+                                    history
+                                )
+                            ),
+                        )
+                    )
+
+                    model_latency_ms = (
+                        perf_counter()
+                        - started
+                    ) * 1000
+
+                    proposed = (
+                        model_result.action
+                    )
+
+                    usage = (
+                        model_result.usage
+                    )
+
+                    model_span.set_attribute(
+                        "os_agent.model.provider",
+                        model_result.provider,
+                    )
+
+                    model_span.set_attribute(
+                        "os_agent.model.name",
+                        model_result.model,
+                    )
+
+                    model_span.set_attribute(
+                        "os_agent.step.number",
+                        step,
+                    )
+
+                    model_span.set_attribute(
+                        "os_agent.model.latency_ms",
+                        model_latency_ms,
+                    )
+
+                    model_span.set_attribute(
+                        "os_agent.model.input_tokens",
+                        usage.input_tokens,
+                    )
+
+                    model_span.set_attribute(
+                        "os_agent.model.output_tokens",
+                        usage.output_tokens,
+                    )
+
+                    model_span.set_attribute(
+                        "os_agent.model.total_tokens",
+                        usage.total_tokens,
+                    )
+
+                    model_span.set_attribute(
+                        "os_agent.model.cached_input_tokens",
+                        usage.cached_input_tokens,
+                    )
+
+                    model_span.set_attribute(
+                        "os_agent.model.reasoning_tokens",
+                        usage.reasoning_tokens,
+                    )
+
+                    model_span.set_attribute(
+                        "os_agent.model.proposed_action",
+                        proposed.get(
+                            "action",
+                            "unknown",
                         ),
                     )
-                )
 
             finally:
                 self.computer.cleanup_state(

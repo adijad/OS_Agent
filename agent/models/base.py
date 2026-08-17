@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from .result import ModelCallResult
 
 
 class ModelProvider(ABC):
@@ -9,7 +10,7 @@ class ModelProvider(ABC):
         goal: str,
         state: dict,
         history: list[dict],
-    ) -> dict:
+    ) -> ModelCallResult:
         """
         Return exactly one proposed OS Agent action.
         """

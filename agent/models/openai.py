@@ -12,6 +12,11 @@ from .shared import (
     SYSTEM_PROMPT,
 )
 
+from .result import (
+    ModelCallResult,
+    ModelUsage,
+)
+
 
 class OpenAIProvider(ModelProvider):
     def __init__(self):
@@ -96,14 +101,79 @@ class OpenAIProvider(ModelProvider):
             )
         )
 
+        usage = response.usage
+        input_details = getattr(
+            usage,
+            "input_tokens_details",
+            None,
+        )
+
+        output_details = getattr(
+            usage,
+            "output_tokens_details",
+            None,
+        )
+
+        model_usage = ModelUsage(
+            input_tokens=(
+                getattr(
+                    usage,
+                    "input_tokens",
+                    0,
+                )
+                or 0
+            ),
+
+            output_tokens=(
+                getattr(
+                    usage,
+                    "output_tokens",
+                    0,
+                )
+                or 0
+            ),
+
+            total_tokens=(
+                getattr(
+                    usage,
+                    "total_tokens",
+                    0,
+                )
+                or 0
+            ),
+
+            cached_input_tokens=(
+                getattr(
+                    input_details,
+                    "cached_tokens",
+                    0,
+                )
+                or 0
+            ),
+
+            reasoning_tokens=(
+                getattr(
+                    output_details,
+                    "reasoning_tokens",
+                    0,
+                )
+                or 0
+            ),
+        )
+
         for item in response.output:
             if (
                 item.type == "function_call"
                 and item.name
                 == "computer_action"
             ):
-                return json.loads(
-                    item.arguments
+                return ModelCallResult(
+                    action=json.loads(
+                        item.arguments
+                    ),
+                    provider="openai",
+                    model=response.model,
+                    usage=model_usage
                 )
 
         raise RuntimeError(
