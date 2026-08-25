@@ -12,6 +12,7 @@ from opentelemetry.sdk.trace import (
 from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
     ConsoleSpanExporter,
+    SimpleSpanProcessor,
 )
 
 
@@ -45,7 +46,7 @@ def configure_telemetry():
     )
 
     provider.add_span_processor(
-        BatchSpanProcessor(
+        SimpleSpanProcessor(
             ConsoleSpanExporter()
         )
     )

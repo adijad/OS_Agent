@@ -1,6 +1,3 @@
-from .executor import ActionExecutor
-from .models import create_model_provider
-from .policy import PolicyEngine
 from time import (
     perf_counter,
     sleep,
@@ -10,9 +7,15 @@ from observability import (
     get_tracer,
 )
 
+from .executor import ActionExecutor
+from .models import create_model_provider
+from .policy import PolicyEngine
+
+
 tracer = get_tracer(
     "os_agent.agent"
 )
+
 
 class AgentLoop:
     def __init__(
@@ -36,313 +39,724 @@ class AgentLoop:
 
         self.max_steps = max_steps
 
+    # =====================================================
+    # AGENT RUN
+    # =====================================================
+
     def run(
         self,
         goal: str,
     ):
         history = []
 
-        print("\n============================")
-        print("OS AGENT")
-        print("============================")
-        print(f"Goal: {goal}")
+        # =================================================
+        # RUN-LEVEL TELEMETRY ACCUMULATORS
+        # =================================================
 
-        for step in range(
-            1,
-            self.max_steps + 1,
-        ):
-            print(
-                f"\n---------- STEP {step} ----------"
-            )
+        model_calls = 0
+        executed_actions = 0
+        steps_attempted = 0
 
-            # -------------------------------------------------
-            # 1. Observe current computer state
-            # -------------------------------------------------
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_tokens = 0
 
-            state = (
-                self.computer.capture_state()
-            )
+        total_cached_input_tokens = 0
+        total_cache_creation_input_tokens = 0
+        total_reasoning_tokens = 0
 
-            # -------------------------------------------------
-            # 2. Ask the model for exactly one next action
-            #
-            # We send sanitized history rather than the
-            # full internal trace.
-            #
-            # The temporary screenshot is deleted as soon
-            # as the model has finished using it.
-            # -------------------------------------------------
+        total_model_latency_ms = 0.0
+
+        run_status = "unknown"
+
+        run_started = perf_counter()
+
+        # =================================================
+        # ROOT RUN SPAN
+        #
+        # One user goal should correspond to one trace.
+        #
+        # All step spans created inside this context
+        # automatically become children of this run span.
+        # =================================================
+
+        with tracer.start_as_current_span(
+            "os_agent.run"
+        ) as run_span:
 
             try:
-                with tracer.start_as_current_span(
-                    "os_agent.model.choose_action"
-                ) as model_span:
+                print(
+                    "\n============================"
+                )
+                print(
+                    "OS AGENT"
+                )
+                print(
+                    "============================"
+                )
+                print(
+                    f"Goal: {goal}"
+                )
 
-                    started = perf_counter()
+                # =========================================
+                # MAIN AGENT LOOP
+                # =========================================
 
-                    model_result = (
-                        self.model.choose_action(
-                            goal=goal,
-                            state=state,
-                            history=(
-                                self._history_for_model(
-                                    history
+                for step in range(
+                    1,
+                    self.max_steps + 1,
+                ):
+                    steps_attempted = step
+
+                    # =====================================
+                    # STEP SPAN
+                    #
+                    # One complete:
+                    #
+                    # observe
+                    #     ↓
+                    # reason
+                    #     ↓
+                    # act
+                    #
+                    # cycle.
+                    # =====================================
+
+                    with tracer.start_as_current_span(
+                        "os_agent.step"
+                    ) as step_span:
+
+                        step_span.set_attribute(
+                            "os_agent.step.number",
+                            step,
+                        )
+
+                        print(
+                            f"\n---------- STEP "
+                            f"{step} ----------"
+                        )
+
+                        # ---------------------------------
+                        # 1. Observe current computer state
+                        # ---------------------------------
+
+                        state = (
+                            self.computer
+                            .capture_state()
+                        )
+
+                        # ---------------------------------
+                        # 2. Ask the model for exactly one
+                        #    next action.
+                        #
+                        # Because this span is created
+                        # inside the step span, it
+                        # automatically becomes its child.
+                        # ---------------------------------
+
+                        try:
+                            with (
+                                tracer
+                                .start_as_current_span(
+                                    "os_agent.model."
+                                    "choose_action"
                                 )
+                            ) as model_span:
+
+                                model_started = (
+                                    perf_counter()
+                                )
+
+                                model_result = (
+                                    self.model
+                                    .choose_action(
+                                        goal=goal,
+                                        state=state,
+                                        history=(
+                                            self
+                                            ._history_for_model(
+                                                history
+                                            )
+                                        ),
+                                    )
+                                )
+
+                                model_latency_ms = (
+                                    (
+                                        perf_counter()
+                                        - model_started
+                                    )
+                                    * 1000
+                                )
+
+                                proposed = (
+                                    model_result.action
+                                )
+
+                                usage = (
+                                    model_result.usage
+                                )
+
+                                proposed_action = (
+                                    proposed.get(
+                                        "action",
+                                        "unknown",
+                                    )
+                                )
+
+                                # =========================
+                                # PER-MODEL-CALL TELEMETRY
+                                # =========================
+
+                                model_span.set_attribute(
+                                    (
+                                        "os_agent.model."
+                                        "provider"
+                                    ),
+                                    model_result.provider,
+                                )
+
+                                model_span.set_attribute(
+                                    "os_agent.model.name",
+                                    model_result.model,
+                                )
+
+                                model_span.set_attribute(
+                                    (
+                                        "os_agent.step."
+                                        "number"
+                                    ),
+                                    step,
+                                )
+
+                                model_span.set_attribute(
+                                    (
+                                        "os_agent.model."
+                                        "latency_ms"
+                                    ),
+                                    model_latency_ms,
+                                )
+
+                                model_span.set_attribute(
+                                    (
+                                        "os_agent.model."
+                                        "input_tokens"
+                                    ),
+                                    usage.input_tokens,
+                                )
+
+                                model_span.set_attribute(
+                                    (
+                                        "os_agent.model."
+                                        "output_tokens"
+                                    ),
+                                    usage.output_tokens,
+                                )
+
+                                model_span.set_attribute(
+                                    (
+                                        "os_agent.model."
+                                        "total_tokens"
+                                    ),
+                                    usage.total_tokens,
+                                )
+
+                                model_span.set_attribute(
+                                    (
+                                        "os_agent.model."
+                                        "cached_input_tokens"
+                                    ),
+                                    (
+                                        usage
+                                        .cached_input_tokens
+                                    ),
+                                )
+
+                                model_span.set_attribute(
+                                    (
+                                        "os_agent.model."
+                                        "cache_creation_"
+                                        "input_tokens"
+                                    ),
+                                    (
+                                        usage
+                                        .cache_creation_input_tokens
+                                    ),
+                                )
+
+                                model_span.set_attribute(
+                                    (
+                                        "os_agent.model."
+                                        "reasoning_tokens"
+                                    ),
+                                    usage.reasoning_tokens,
+                                )
+
+                                model_span.set_attribute(
+                                    (
+                                        "os_agent.model."
+                                        "proposed_action"
+                                    ),
+                                    proposed_action,
+                                )
+
+                                # =========================
+                                # UPDATE RUN TOTALS
+                                # =========================
+
+                                model_calls += 1
+
+                                (
+                                    total_model_latency_ms
+                                ) += (
+                                    model_latency_ms
+                                )
+
+                                total_input_tokens += (
+                                    usage.input_tokens
+                                )
+
+                                total_output_tokens += (
+                                    usage.output_tokens
+                                )
+
+                                total_tokens += (
+                                    usage.total_tokens
+                                )
+
+                                (
+                                    total_cached_input_tokens
+                                ) += (
+                                    usage
+                                    .cached_input_tokens
+                                )
+
+                                (
+                                    total_cache_creation_input_tokens
+                                ) += (
+                                    usage
+                                    .cache_creation_input_tokens
+                                )
+
+                                (
+                                    total_reasoning_tokens
+                                ) += (
+                                    usage
+                                    .reasoning_tokens
+                                )
+
+                                # -------------------------
+                                # Provider/model metadata
+                                # also belongs on the root
+                                # run span.
+                                # -------------------------
+
+                                run_span.set_attribute(
+                                    (
+                                        "os_agent.run."
+                                        "provider"
+                                    ),
+                                    model_result.provider,
+                                )
+
+                                run_span.set_attribute(
+                                    "os_agent.run.model",
+                                    model_result.model,
+                                )
+
+                        finally:
+                            # Temporary screenshot/state
+                            # resources are no longer needed
+                            # after the model has consumed
+                            # the observation.
+                            self.computer.cleanup_state(
+                                state
+                            )
+
+                        # =================================
+                        # STEP METADATA
+                        # =================================
+
+                        proposed_action = (
+                            proposed.get(
+                                "action",
+                                "unknown",
+                            )
+                        )
+
+                        step_span.set_attribute(
+                            (
+                                "os_agent.step."
+                                "proposed_action"
+                            ),
+                            proposed_action,
+                        )
+
+                        print(
+                            f"Reason: "
+                            f"{proposed.get('reason')}"
+                        )
+
+                        print(
+                            f"Proposed action: "
+                            f"{proposed_action}"
+                        )
+
+                        # ---------------------------------
+                        # 3. Finish if the model believes
+                        #    the requested goal has been
+                        #    satisfied.
+                        # ---------------------------------
+
+                        if (
+                            proposed_action
+                            == "finish"
+                        ):
+                            answer = (
+                                proposed.get(
+                                    "answer"
+                                )
+                            )
+
+                            run_status = "success"
+
+                            step_span.set_attribute(
+                                (
+                                    "os_agent.step."
+                                    "outcome"
+                                ),
+                                "finish",
+                            )
+
+                            print(
+                                "\n✅ GOAL COMPLETE"
+                            )
+
+                            if answer:
+                                print(
+                                    f"Answer: {answer}"
+                                )
+
+                            return {
+                                "status": "success",
+                                "answer": answer,
+                                "history": history,
+                            }
+
+                        # ---------------------------------
+                        # 4. Convert provider output into
+                        #    our internal OS Agent action
+                        #    format.
+                        # ---------------------------------
+
+                        action = (
+                            self._clean_action(
+                                proposed
+                            )
+                        )
+
+                        # ---------------------------------
+                        # 5. Ground target IDs back to the
+                        #    semantic observation.
+                        # ---------------------------------
+
+                        target_info = (
+                            self._get_target_info(
+                                action,
+                                state,
+                            )
+                        )
+
+                        if target_info:
+                            print(
+                                "Grounded target: "
+                                f"{target_info['role']} "
+                                f"{target_info['name']!r}"
+                            )
+
+                        # ---------------------------------
+                        # 6. Policy check + physical
+                        #    execution.
+                        # ---------------------------------
+
+                        try:
+                            self.policy.check(
+                                action=action,
+                                state=state,
+                            )
+
+                            result = (
+                                self.executor
+                                .execute(
+                                    action
+                                )
+                            )
+
+                        except Exception as exc:
+                            result = {
+                                "status": "error",
+
+                                "error": (
+                                    f"{type(exc).__name__}: "
+                                    f"{exc}"
+                                ),
+                            }
+
+                        # A model "finish" decision does
+                        # not count as a physical action.
+                        #
+                        # Everything reaching this point
+                        # represents an attempted computer
+                        # action.
+                        executed_actions += 1
+
+                        step_span.set_attribute(
+                            (
+                                "os_agent.step."
+                                "executor_status"
+                            ),
+                            result.get(
+                                "status",
+                                "unknown",
                             ),
                         )
-                    )
 
-                    model_latency_ms = (
-                        perf_counter()
-                        - started
-                    ) * 1000
+                        # ---------------------------------
+                        # 7. Store FULL internal trace.
+                        #
+                        # Raw snapshot target IDs can remain
+                        # here for debugging.
+                        #
+                        # _history_for_model() sanitizes
+                        # them before sending historical
+                        # context back to the model.
+                        # ---------------------------------
 
-                    proposed = (
-                        model_result.action
-                    )
+                        history.append(
+                            {
+                                "step": step,
 
-                    usage = (
-                        model_result.usage
-                    )
+                                "reason": (
+                                    proposed.get(
+                                        "reason"
+                                    )
+                                ),
 
-                    model_span.set_attribute(
-                        "os_agent.model.provider",
-                        model_result.provider,
-                    )
+                                "action": action,
 
-                    model_span.set_attribute(
-                        "os_agent.model.name",
-                        model_result.model,
-                    )
+                                "target_name": (
+                                    target_info.get(
+                                        "name"
+                                    )
+                                    if target_info
+                                    else None
+                                ),
 
-                    model_span.set_attribute(
-                        "os_agent.step.number",
-                        step,
-                    )
+                                "target_role": (
+                                    target_info.get(
+                                        "role"
+                                    )
+                                    if target_info
+                                    else None
+                                ),
 
-                    model_span.set_attribute(
-                        "os_agent.model.latency_ms",
-                        model_latency_ms,
-                    )
+                                "result": result,
+                            }
+                        )
 
-                    model_span.set_attribute(
-                        "os_agent.model.input_tokens",
-                        usage.input_tokens,
-                    )
+                        print(
+                            f"Result: {result}"
+                        )
 
-                    model_span.set_attribute(
-                        "os_agent.model.output_tokens",
-                        usage.output_tokens,
-                    )
+                        # ---------------------------------
+                        # 8. Detect repeated/stuck
+                        #    behavior immediately.
+                        # ---------------------------------
 
-                    model_span.set_attribute(
-                        "os_agent.model.total_tokens",
-                        usage.total_tokens,
-                    )
+                        if self._is_stuck(
+                            history
+                        ):
+                            run_status = "stuck"
 
-                    model_span.set_attribute(
-                        "os_agent.model.cached_input_tokens",
-                        usage.cached_input_tokens,
-                    )
+                            step_span.set_attribute(
+                                (
+                                    "os_agent.step."
+                                    "outcome"
+                                ),
+                                "stuck",
+                            )
 
-                    model_span.set_attribute(
-                        "os_agent.model.reasoning_tokens",
-                        usage.reasoning_tokens,
-                    )
+                            print(
+                                "\n⚠ STUCK: repeating "
+                                "action pattern detected."
+                            )
 
-                    model_span.set_attribute(
-                        "os_agent.model.proposed_action",
-                        proposed.get(
-                            "action",
-                            "unknown",
-                        ),
-                    )
+                            return {
+                                "status": "stuck",
+                                "history": history,
+                            }
+
+                        # This iteration completed
+                        # normally and another observation
+                        # will follow.
+                        step_span.set_attribute(
+                            (
+                                "os_agent.step."
+                                "outcome"
+                            ),
+                            "continue",
+                        )
+
+                    # =====================================
+                    # STEP SPAN ENDS HERE
+                    # =====================================
+
+                    # Give the interface a moment to
+                    # update before observing again.
+                    sleep(0.5)
+
+                # =========================================
+                # MAXIMUM STEP LIMIT
+                # =========================================
+
+                run_status = "max_steps"
+
+                print(
+                    "\n❌ Maximum step limit reached."
+                )
+
+                return {
+                    "status": "max_steps",
+                    "history": history,
+                }
+
+            except Exception:
+                # -----------------------------------------
+                # Preserve unexpected failure as the final
+                # run status.
+                #
+                # Re-raise so existing application
+                # behavior remains unchanged.
+                #
+                # OpenTelemetry's active span context can
+                # also record the propagated exception.
+                # -----------------------------------------
+
+                run_status = "error"
+
+                raise
 
             finally:
-                self.computer.cleanup_state(
-                    state
-                )
+                # =========================================
+                # FINAL RUN-LEVEL TELEMETRY
+                #
+                # This executes for:
+                #
+                # success
+                # stuck
+                # max_steps
+                # exception
+                # =========================================
 
-            print(
-                f"Reason: "
-                f"{proposed.get('reason')}"
-            )
-
-            print(
-                f"Proposed action: "
-                f"{proposed.get('action')}"
-            )
-
-            # -------------------------------------------------
-            # 3. Finish if the model believes the user's
-            #    requested goal is already satisfied.
-            # -------------------------------------------------
-
-            if (
-                proposed.get("action")
-                == "finish"
-            ):
-                answer = proposed.get(
-                    "answer"
-                )
-
-                print("\n✅ GOAL COMPLETE")
-
-                if answer:
-                    print(
-                        f"Answer: {answer}"
+                run_elapsed_ms = (
+                    (
+                        perf_counter()
+                        - run_started
                     )
-
-                return {
-                    "status": "success",
-                    "answer": answer,
-                    "history": history,
-                }
-
-            # -------------------------------------------------
-            # 4. Convert provider output into our internal
-            #    OS Agent action format.
-            # -------------------------------------------------
-
-            action = self._clean_action(
-                proposed
-            )
-
-            # -------------------------------------------------
-            # 5. Ground target IDs back to semantic controls.
-            #
-            # click, type_text, and focus_window may contain
-            # a temporary snapshot target.
-            #
-            # press_key and hotkey do not require a target.
-            # -------------------------------------------------
-
-            target_info = (
-                self._get_target_info(
-                    action,
-                    state,
-                )
-            )
-
-            if target_info:
-                print(
-                    "Grounded target: "
-                    f"{target_info['role']} "
-                    f"{target_info['name']!r}"
+                    * 1000
                 )
 
-            # -------------------------------------------------
-            # 6. Policy check + physical execution
-            # -------------------------------------------------
-
-            try:
-                self.policy.check(
-                    action=action,
-                    state=state,
+                run_span.set_attribute(
+                    "os_agent.run.status",
+                    run_status,
                 )
 
-                result = (
-                    self.executor.execute(
-                        action
-                    )
+                run_span.set_attribute(
+                    "os_agent.run.steps",
+                    steps_attempted,
                 )
 
-            except Exception as exc:
-                result = {
-                    "status": "error",
-                    "error": (
-                        f"{type(exc).__name__}: "
-                        f"{exc}"
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "model_calls"
                     ),
-                }
-
-            # -------------------------------------------------
-            # 7. Store FULL internal trace
-            #
-            # This can keep the raw target ID because it is
-            # useful for debugging.
-            #
-            # _history_for_model() will sanitize it before
-            # sending history back to the LLM.
-            # -------------------------------------------------
-
-            history.append(
-                {
-                    "step": step,
-
-                    "reason": proposed.get(
-                        "reason"
-                    ),
-
-                    "action": action,
-
-                    "target_name": (
-                        target_info.get(
-                            "name"
-                        )
-                        if target_info
-                        else None
-                    ),
-
-                    "target_role": (
-                        target_info.get(
-                            "role"
-                        )
-                        if target_info
-                        else None
-                    ),
-
-                    "result": result,
-                }
-            )
-
-            print(
-                f"Result: {result}"
-            )
-
-            # -------------------------------------------------
-            # 8. Detect repeated/stuck behavior IMMEDIATELY
-            #
-            # We do this inside the loop, after every action.
-            #
-            # Example:
-            #
-            # Clear -> Seven -> Clear -> Seven
-            #       -> Clear -> Seven
-            #
-            # should stop here instead of consuming all
-            # 25 model calls.
-            # -------------------------------------------------
-
-            if self._is_stuck(
-                history
-            ):
-                print(
-                    "\n⚠ STUCK: repeating action "
-                    "pattern detected."
+                    model_calls,
                 )
 
-                return {
-                    "status": "stuck",
-                    "history": history,
-                }
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "executed_actions"
+                    ),
+                    executed_actions,
+                )
 
-            # Give the UI a moment to update before
-            # observing the next state.
-            sleep(0.5)
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "input_tokens"
+                    ),
+                    total_input_tokens,
+                )
 
-        # -------------------------------------------------
-        # Max steps reached without finish or stuck
-        # -------------------------------------------------
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "output_tokens"
+                    ),
+                    total_output_tokens,
+                )
 
-        print(
-            "\n❌ Maximum step limit reached."
-        )
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "total_tokens"
+                    ),
+                    total_tokens,
+                )
 
-        return {
-            "status": "max_steps",
-            "history": history,
-        }
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "cached_input_tokens"
+                    ),
+                    total_cached_input_tokens,
+                )
+
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "cache_creation_input_tokens"
+                    ),
+                    (
+                        total_cache_creation_input_tokens
+                    ),
+                )
+
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "reasoning_tokens"
+                    ),
+                    total_reasoning_tokens,
+                )
+
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "model_latency_ms"
+                    ),
+                    total_model_latency_ms,
+                )
+
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "elapsed_ms"
+                    ),
+                    run_elapsed_ms,
+                )
 
     # =====================================================
     # ACTION CLEANING
@@ -408,6 +822,7 @@ class AgentLoop:
         # One semantic special key
         #
         # Example:
+        #
         # ENTER
         # TAB
         # ESC
@@ -424,6 +839,7 @@ class AgentLoop:
         # Structured keyboard shortcut
         #
         # Example:
+        #
         # ["CTRL", "L"]
         # ["CTRL", "SHIFT", "S"]
         # -----------------------------
@@ -508,6 +924,7 @@ class AgentLoop:
                 }
 
         # Target may also be a top-level window.
+
         windows = (
             state["semantic"]
             .get(
@@ -732,6 +1149,7 @@ class AgentLoop:
         if action_type == "press_key":
             return (
                 action_type,
+
                 action.get(
                     "key"
                 ),
@@ -754,7 +1172,7 @@ class AgentLoop:
             )
 
         # -----------------------------
-        # Launch
+        # Application launch
         # -----------------------------
 
         if (
@@ -763,6 +1181,7 @@ class AgentLoop:
         ):
             return (
                 action_type,
+
                 action.get(
                     "application"
                 ),
