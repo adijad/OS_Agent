@@ -140,10 +140,29 @@ class AgentLoop:
                         # 1. Observe current computer state
                         # ---------------------------------
 
-                        state = (
-                            self.computer
-                            .capture_state()
-                        )
+                        with tracer.start_as_current_span(
+                            "os_agent.computer.observe"
+                        ) as observe_span:
+
+                            observe_started = perf_counter()
+
+                            state = (
+                                self.computer
+                                .capture_state()
+                            )
+
+                            observe_latency_ms = (
+                                (
+                                    perf_counter()
+                                    - observe_started
+                                )
+                                * 1000
+                            )
+
+                            observe_span.set_attribute(
+                                "os_agent.observe.latency_ms",
+                                observe_latency_ms,
+                            )
 
                         # ---------------------------------
                         # 2. Ask the model for exactly one
@@ -478,19 +497,100 @@ class AgentLoop:
                         # 6. Policy check + physical
                         #    execution.
                         # ---------------------------------
-
                         try:
-                            self.policy.check(
-                                action=action,
-                                state=state,
-                            )
+                            # =============================
+                            # POLICY SPAN
+                            # =============================
 
-                            result = (
-                                self.executor
-                                .execute(
-                                    action
-                                )
-                            )
+                            with tracer.start_as_current_span(
+                                "os_agent.policy.check"
+                            ) as policy_span:
+
+                                policy_started = perf_counter()
+
+                                try:
+                                    self.policy.check(
+                                        action=action,
+                                        state=state,
+                                    )
+
+                                    policy_span.set_attribute(
+                                        "os_agent.policy.outcome",
+                                        "allow",
+                                    )
+
+                                finally:
+                                    policy_latency_ms = (
+                                        (
+                                            perf_counter()
+                                            - policy_started
+                                        )
+                                        * 1000
+                                    )
+
+                                    policy_span.set_attribute(
+                                        "os_agent.policy.latency_ms",
+                                        policy_latency_ms,
+                                    )
+
+                                    policy_span.set_attribute(
+                                        "os_agent.policy.action_type",
+                                        action.get(
+                                            "action",
+                                            "unknown",
+                                        ),
+                                    )
+
+                            # =============================
+                            # EXECUTOR SPAN
+                            # =============================
+
+                            with tracer.start_as_current_span(
+                                "os_agent.executor.execute"
+                            ) as executor_span:
+
+                                executor_started = perf_counter()
+
+                                try:
+                                    result = (
+                                        self.executor.execute(
+                                            action
+                                        )
+                                    )
+
+                                    executor_span.set_attribute(
+                                        "os_agent.executor.status",
+                                        result.get(
+                                            "status",
+                                            "unknown",
+                                        ),
+                                    )
+
+                                finally:
+                                    executor_latency_ms = (
+                                        (
+                                            perf_counter()
+                                            - executor_started
+                                        )
+                                        * 1000
+                                    )
+
+                                    executor_span.set_attribute(
+                                        "os_agent.executor.latency_ms",
+                                        executor_latency_ms,
+                                    )
+
+                                    executor_span.set_attribute(
+                                        "os_agent.executor.action_type",
+                                        action.get(
+                                            "action",
+                                            "unknown",
+                                        ),
+                                    )
+
+                            # Only increment this AFTER the action
+                            # actually reaches the executor.
+                            executed_actions += 1
 
                         except Exception as exc:
                             result = {
@@ -508,7 +608,6 @@ class AgentLoop:
                         # Everything reaching this point
                         # represents an attempted computer
                         # action.
-                        executed_actions += 1
 
                         step_span.set_attribute(
                             (
