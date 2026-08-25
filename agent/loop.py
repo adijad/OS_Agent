@@ -66,6 +66,9 @@ class AgentLoop:
         total_reasoning_tokens = 0
 
         total_model_latency_ms = 0.0
+        total_policy_latency_ms = 0.0
+        total_executor_latency_ms = 0.0
+        total_observe_latency_ms = 0.0
 
         run_status = "unknown"
 
@@ -146,23 +149,29 @@ class AgentLoop:
 
                             observe_started = perf_counter()
 
-                            state = (
-                                self.computer
-                                .capture_state()
-                            )
-
-                            observe_latency_ms = (
-                                (
-                                    perf_counter()
-                                    - observe_started
+                            try: 
+                                state = (
+                                    self.computer
+                                    .capture_state()
                                 )
-                                * 1000
-                            )
 
-                            observe_span.set_attribute(
-                                "os_agent.observe.latency_ms",
-                                observe_latency_ms,
-                            )
+                            finally:
+                                observe_latency_ms = (
+                                    (
+                                        perf_counter()
+                                        - observe_started
+                                    )
+                                    * 1000
+                                )
+
+                                total_observe_latency_ms += (
+                                    observe_latency_ms
+                                )
+
+                                observe_span.set_attribute(
+                                    "os_agent.observe.latency_ms",
+                                    observe_latency_ms,
+                                )
 
                         # ---------------------------------
                         # 2. Ask the model for exactly one
@@ -528,6 +537,10 @@ class AgentLoop:
                                         * 1000
                                     )
 
+                                    total_policy_latency_ms += (
+                                        policy_latency_ms
+                                    )
+
                                     policy_span.set_attribute(
                                         "os_agent.policy.latency_ms",
                                         policy_latency_ms,
@@ -573,6 +586,10 @@ class AgentLoop:
                                             - executor_started
                                         )
                                         * 1000
+                                    )
+
+                                    total_executor_latency_ms += (
+                                        executor_latency_ms
                                     )
 
                                     executor_span.set_attribute(
@@ -847,6 +864,48 @@ class AgentLoop:
                         "model_latency_ms"
                     ),
                     total_model_latency_ms,
+                )
+
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "observe_latency_ms"
+                    ),
+                    total_observe_latency_ms,
+                )
+
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "policy_latency_ms"
+                    ),
+                    total_policy_latency_ms,
+                )
+
+                run_span.set_attribute(
+                    (
+                        "os_agent.run."
+                        "executor_latency_ms"
+                    ),
+                    total_executor_latency_ms,
+                )
+
+                accounted_latency_ms = (
+                    total_model_latency_ms
+                    + total_observe_latency_ms
+                    + total_policy_latency_ms
+                    + total_executor_latency_ms
+                )
+
+                unattributed_latency_ms = max(
+                    0.0,
+                    run_elapsed_ms
+                    - accounted_latency_ms,
+                )
+
+                run_span.set_attribute(
+                    "os_agent.run.unattributed_latency_ms",
+                    unattributed_latency_ms,
                 )
 
                 run_span.set_attribute(
