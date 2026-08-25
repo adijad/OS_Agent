@@ -2,7 +2,10 @@ import argparse
 
 from agent.loop import AgentLoop
 from computer import Computer
-from observability import configure_telemetry
+from observability import (
+    configure_telemetry,
+    shutdown_telemetry,
+)
 
 
 def main():
@@ -21,23 +24,31 @@ def main():
 
     configure_telemetry()
 
-    goal = input(
-        "What would you like me to do?\n> "
-    ).strip()
+    try:
+        goal = input(
+            "What would you like me to do?\n> "
+        ).strip()
 
-    if not goal:
-        print("No goal provided.")
-        return
+        if not goal:
+            print(
+                "No goal provided."
+            )
+            return
 
-    computer = Computer()
+        computer = Computer()
 
-    agent = AgentLoop(
-        computer,
-        model_provider=args.provider,
-        max_steps=20,
-    )
+        agent = AgentLoop(
+            computer,
+            model_provider=args.provider,
+            max_steps=20,
+        )
 
-    agent.run(goal)
+        agent.run(
+            goal
+        )
+
+    finally:
+        shutdown_telemetry()
 
 
 if __name__ == "__main__":

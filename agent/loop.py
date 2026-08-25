@@ -7,6 +7,10 @@ from observability import (
     get_tracer,
 )
 
+from observability.metrics import (
+    AgentMetrics
+)
+
 from .executor import ActionExecutor
 from .models import create_model_provider
 from .policy import PolicyEngine
@@ -37,6 +41,8 @@ class AgentLoop:
 
         self.policy = PolicyEngine()
 
+        self.metrics = AgentMetrics()
+
         self.max_steps = max_steps
 
     # =====================================================
@@ -48,6 +54,9 @@ class AgentLoop:
         goal: str,
     ):
         history = []
+
+        run_provider = "unknown"
+        run_model = "unknown"
 
         # =================================================
         # RUN-LEVEL TELEMETRY ACCUMULATORS
@@ -165,6 +174,10 @@ class AgentLoop:
                                 )
 
                                 total_observe_latency_ms += (
+                                    observe_latency_ms
+                                )
+
+                                self.metrics.record_observation(
                                     observe_latency_ms
                                 )
 
@@ -373,6 +386,23 @@ class AgentLoop:
                                     .reasoning_tokens
                                 )
 
+                                self.metrics.record_model_call(
+                                    provider=model_result.provider,
+                                    model=model_result.model,
+                                    latency_ms=model_latency_ms,
+                                    input_tokens=usage.input_tokens,
+                                    output_tokens=usage.output_tokens,
+                                    total_tokens=usage.total_tokens,
+                                )
+
+                                run_provider = (
+                                    model_result.provider
+                                )
+                                
+                                run_model = (
+                                    model_result.model
+                                )
+
                                 # -------------------------
                                 # Provider/model metadata
                                 # also belongs on the root
@@ -380,16 +410,13 @@ class AgentLoop:
                                 # -------------------------
 
                                 run_span.set_attribute(
-                                    (
-                                        "os_agent.run."
-                                        "provider"
-                                    ),
-                                    model_result.provider,
+                                    "os_agent.run.provider",
+                                    run_provider,
                                 )
 
                                 run_span.set_attribute(
                                     "os_agent.run.model",
-                                    model_result.model,
+                                    run_model,
                                 )
 
                         finally:
@@ -564,6 +591,8 @@ class AgentLoop:
 
                                 executor_started = perf_counter()
 
+                                executor_status = "error"
+
                                 try:
                                     result = (
                                         self.executor.execute(
@@ -571,12 +600,16 @@ class AgentLoop:
                                         )
                                     )
 
-                                    executor_span.set_attribute(
-                                        "os_agent.executor.status",
+                                    executor_status = (
                                         result.get(
                                             "status",
                                             "unknown",
-                                        ),
+                                        )
+                                    )
+
+                                    executor_span.set_attribute(
+                                        "os_agent.executor.status",
+                                        executor_status,
                                     )
 
                                 finally:
@@ -603,6 +636,15 @@ class AgentLoop:
                                             "action",
                                             "unknown",
                                         ),
+                                    )
+
+                                    self.metrics.record_action(
+                                        action_type=action.get(
+                                            "action",
+                                            "unknown",
+                                        ),
+                                        status=executor_status,
+                                        latency_ms=executor_latency_ms,
                                     )
 
                             # Only increment this AFTER the action
@@ -780,6 +822,14 @@ class AgentLoop:
                         - run_started
                     )
                     * 1000
+                )
+
+                self.metrics.record_run(
+                    provider=run_provider,
+                    model=run_model,
+                    status=run_status,
+                    duration_ms=run_elapsed_ms,
+                    steps=steps_attempted,
                 )
 
                 run_span.set_attribute(
