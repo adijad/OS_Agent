@@ -1,6 +1,16 @@
+import os
+
 from opentelemetry import (
     metrics,
     trace,
+)
+
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+    OTLPMetricExporter,
+)
+
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+    OTLPSpanExporter,
 )
 
 from opentelemetry.sdk.metrics import (
@@ -8,7 +18,6 @@ from opentelemetry.sdk.metrics import (
 )
 
 from opentelemetry.sdk.metrics.export import (
-    ConsoleMetricExporter,
     PeriodicExportingMetricReader,
 )
 
@@ -22,8 +31,7 @@ from opentelemetry.sdk.trace import (
 )
 
 from opentelemetry.sdk.trace.export import (
-    ConsoleSpanExporter,
-    SimpleSpanProcessor,
+    BatchSpanProcessor,
 )
 
 
@@ -41,6 +49,10 @@ def configure_telemetry():
     if _configured:
         return
 
+    # =============================================
+    # RESOURCE
+    # =============================================
+
     resource = Resource.create(
         {
             SERVICE_NAME: "os-agent",
@@ -48,16 +60,34 @@ def configure_telemetry():
     )
 
     # =============================================
+    # OTLP ENDPOINT
+    #
+    # Grafana OTEL-LGTM exposes OTLP/HTTP
+    # on localhost:4318.
+    # =============================================
+
+    otlp_endpoint = os.getenv(
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "http://localhost:4318",
+    ).rstrip("/")
+
+    # =============================================
     # TRACING
     # =============================================
 
+    span_exporter = OTLPSpanExporter(
+        endpoint=(
+            f"{otlp_endpoint}/v1/traces"
+        ),
+    )
+
     tracer_provider = TracerProvider(
-        resource=resource
+        resource=resource,
     )
 
     tracer_provider.add_span_processor(
-        SimpleSpanProcessor(
-            ConsoleSpanExporter()
+        BatchSpanProcessor(
+            span_exporter
         )
     )
 
@@ -65,15 +95,23 @@ def configure_telemetry():
         tracer_provider
     )
 
-    _tracer_provider = tracer_provider
+    _tracer_provider = (
+        tracer_provider
+    )
 
     # =============================================
     # METRICS
     # =============================================
 
+    metric_exporter = OTLPMetricExporter(
+        endpoint=(
+            f"{otlp_endpoint}/v1/metrics"
+        ),
+    )
+
     metric_reader = (
         PeriodicExportingMetricReader(
-            ConsoleMetricExporter(),
+            metric_exporter,
             export_interval_millis=5000,
         )
     )
@@ -81,7 +119,7 @@ def configure_telemetry():
     meter_provider = MeterProvider(
         resource=resource,
         metric_readers=[
-            metric_reader
+            metric_reader,
         ],
     )
 
@@ -89,7 +127,9 @@ def configure_telemetry():
         meter_provider
     )
 
-    _meter_provider = meter_provider
+    _meter_provider = (
+        meter_provider
+    )
 
     _configured = True
 
@@ -114,9 +154,9 @@ def shutdown_telemetry():
     """
     Flush and shut down telemetry providers.
 
-    This is especially important for metrics
-    because OS Agent currently runs as a
-    short-lived CLI process.
+    OS Agent currently runs as a short-lived CLI
+    process, so explicit shutdown ensures traces
+    and metrics are exported before Python exits.
     """
 
     global _tracer_provider
