@@ -8,7 +8,12 @@ from observability import (
 )
 
 from observability.metrics import (
-    AgentMetrics
+    AgentMetrics,
+)
+
+from runtime import (
+    ExecutionRuntime,
+    SQLiteRunStore,
 )
 
 from .executor import ActionExecutor
@@ -28,6 +33,7 @@ class AgentLoop:
         *,
         model_provider: str | None = None,
         max_steps: int = 25,
+        runtime: ExecutionRuntime | None = None,
     ):
         self.computer = computer
 
@@ -43,6 +49,15 @@ class AgentLoop:
 
         self.metrics = AgentMetrics()
 
+        self.runtime = (
+            runtime
+            or ExecutionRuntime(
+                SQLiteRunStore(
+                    "data/os_agent.db"
+                )
+            )
+        )
+
         self.max_steps = max_steps
 
     # =====================================================
@@ -54,6 +69,25 @@ class AgentLoop:
         goal: str,
     ):
         history = []
+
+        # =================================================
+        # EXECUTION RUNTIME
+        #
+        # One user goal corresponds to one persistent
+        # runtime Run.
+        # =================================================
+
+        runtime_run = (
+            self.runtime.create_run(
+                goal
+            )
+        )
+
+        self.runtime.start_run(
+            runtime_run
+        )
+
+        active_runtime_step = None
 
         run_provider = "unknown"
         run_model = "unknown"
@@ -96,6 +130,11 @@ class AgentLoop:
             "os_agent.run"
         ) as run_span:
 
+            run_span.set_attribute(
+                "os_agent.runtime.run_id",
+                runtime_run.run_id,
+            )
+
             try:
                 print(
                     "\n============================"
@@ -121,6 +160,24 @@ class AgentLoop:
                     steps_attempted = step
 
                     # =====================================
+                    # RUNTIME STEP
+                    #
+                    # Each real AgentLoop iteration owns
+                    # one persistent runtime Step.
+                    # =====================================
+
+                    runtime_step = (
+                        self.runtime.start_step(
+                            runtime_run,
+                            number=step,
+                        )
+                    )
+
+                    active_runtime_step = (
+                        runtime_step
+                    )
+
+                    # =====================================
                     # STEP SPAN
                     #
                     # One complete:
@@ -143,6 +200,16 @@ class AgentLoop:
                             step,
                         )
 
+                        step_span.set_attribute(
+                            "os_agent.runtime.run_id",
+                            runtime_run.run_id,
+                        )
+
+                        step_span.set_attribute(
+                            "os_agent.runtime.step_id",
+                            runtime_step.step_id,
+                        )
+
                         print(
                             f"\n---------- STEP "
                             f"{step} ----------"
@@ -156,9 +223,11 @@ class AgentLoop:
                             "os_agent.computer.observe"
                         ) as observe_span:
 
-                            observe_started = perf_counter()
+                            observe_started = (
+                                perf_counter()
+                            )
 
-                            try: 
+                            try:
                                 state = (
                                     self.computer
                                     .capture_state()
@@ -182,7 +251,10 @@ class AgentLoop:
                                 )
 
                                 observe_span.set_attribute(
-                                    "os_agent.observe.latency_ms",
+                                    (
+                                        "os_agent.observe."
+                                        "latency_ms"
+                                    ),
                                     observe_latency_ms,
                                 )
 
@@ -347,9 +419,7 @@ class AgentLoop:
 
                                 model_calls += 1
 
-                                (
-                                    total_model_latency_ms
-                                ) += (
+                                total_model_latency_ms += (
                                     model_latency_ms
                                 )
 
@@ -387,18 +457,30 @@ class AgentLoop:
                                 )
 
                                 self.metrics.record_model_call(
-                                    provider=model_result.provider,
-                                    model=model_result.model,
-                                    latency_ms=model_latency_ms,
-                                    input_tokens=usage.input_tokens,
-                                    output_tokens=usage.output_tokens,
-                                    total_tokens=usage.total_tokens,
+                                    provider=(
+                                        model_result.provider
+                                    ),
+                                    model=(
+                                        model_result.model
+                                    ),
+                                    latency_ms=(
+                                        model_latency_ms
+                                    ),
+                                    input_tokens=(
+                                        usage.input_tokens
+                                    ),
+                                    output_tokens=(
+                                        usage.output_tokens
+                                    ),
+                                    total_tokens=(
+                                        usage.total_tokens
+                                    ),
                                 )
 
                                 run_provider = (
                                     model_result.provider
                                 )
-                                
+
                                 run_model = (
                                     model_result.model
                                 )
@@ -458,6 +540,24 @@ class AgentLoop:
                         )
 
                         # ---------------------------------
+                        # Convert the provider response
+                        # into the normalized OS Agent
+                        # semantic action BEFORE writing
+                        # it into persistent runtime state.
+                        # ---------------------------------
+
+                        action = (
+                            self._clean_action(
+                                proposed
+                            )
+                        )
+
+                        self.runtime.set_proposed_action(
+                            runtime_step,
+                            action,
+                        )
+
+                        # ---------------------------------
                         # 3. Finish if the model believes
                         #    the requested goal has been
                         #    satisfied.
@@ -492,23 +592,31 @@ class AgentLoop:
                                     f"Answer: {answer}"
                                 )
 
+                            self.runtime.complete_step(
+                                runtime_step,
+                                outcome="finish",
+                            )
+
+                            active_runtime_step = None
+
+                            self.runtime.complete_run(
+                                runtime_run,
+                                outcome=answer,
+                            )
+
                             return {
                                 "status": "success",
                                 "answer": answer,
                                 "history": history,
+                                "run_id": (
+                                    runtime_run.run_id
+                                ),
                             }
 
                         # ---------------------------------
-                        # 4. Convert provider output into
-                        #    our internal OS Agent action
-                        #    format.
+                        # 4. Action has already been
+                        #    normalized above.
                         # ---------------------------------
-
-                        action = (
-                            self._clean_action(
-                                proposed
-                            )
-                        )
 
                         # ---------------------------------
                         # 5. Ground target IDs back to the
@@ -533,6 +641,7 @@ class AgentLoop:
                         # 6. Policy check + physical
                         #    execution.
                         # ---------------------------------
+
                         try:
                             # =============================
                             # POLICY SPAN
@@ -542,7 +651,9 @@ class AgentLoop:
                                 "os_agent.policy.check"
                             ) as policy_span:
 
-                                policy_started = perf_counter()
+                                policy_started = (
+                                    perf_counter()
+                                )
 
                                 try:
                                     self.policy.check(
@@ -551,7 +662,10 @@ class AgentLoop:
                                     )
 
                                     policy_span.set_attribute(
-                                        "os_agent.policy.outcome",
+                                        (
+                                            "os_agent.policy."
+                                            "outcome"
+                                        ),
                                         "allow",
                                     )
 
@@ -564,17 +678,25 @@ class AgentLoop:
                                         * 1000
                                     )
 
-                                    total_policy_latency_ms += (
+                                    (
+                                        total_policy_latency_ms
+                                    ) += (
                                         policy_latency_ms
                                     )
 
                                     policy_span.set_attribute(
-                                        "os_agent.policy.latency_ms",
+                                        (
+                                            "os_agent.policy."
+                                            "latency_ms"
+                                        ),
                                         policy_latency_ms,
                                     )
 
                                     policy_span.set_attribute(
-                                        "os_agent.policy.action_type",
+                                        (
+                                            "os_agent.policy."
+                                            "action_type"
+                                        ),
                                         action.get(
                                             "action",
                                             "unknown",
@@ -589,7 +711,9 @@ class AgentLoop:
                                 "os_agent.executor.execute"
                             ) as executor_span:
 
-                                executor_started = perf_counter()
+                                executor_started = (
+                                    perf_counter()
+                                )
 
                                 executor_status = "error"
 
@@ -608,7 +732,10 @@ class AgentLoop:
                                     )
 
                                     executor_span.set_attribute(
-                                        "os_agent.executor.status",
+                                        (
+                                            "os_agent.executor."
+                                            "status"
+                                        ),
                                         executor_status,
                                     )
 
@@ -621,17 +748,25 @@ class AgentLoop:
                                         * 1000
                                     )
 
-                                    total_executor_latency_ms += (
+                                    (
+                                        total_executor_latency_ms
+                                    ) += (
                                         executor_latency_ms
                                     )
 
                                     executor_span.set_attribute(
-                                        "os_agent.executor.latency_ms",
+                                        (
+                                            "os_agent.executor."
+                                            "latency_ms"
+                                        ),
                                         executor_latency_ms,
                                     )
 
                                     executor_span.set_attribute(
-                                        "os_agent.executor.action_type",
+                                        (
+                                            "os_agent.executor."
+                                            "action_type"
+                                        ),
                                         action.get(
                                             "action",
                                             "unknown",
@@ -639,16 +774,23 @@ class AgentLoop:
                                     )
 
                                     self.metrics.record_action(
-                                        action_type=action.get(
-                                            "action",
-                                            "unknown",
+                                        action_type=(
+                                            action.get(
+                                                "action",
+                                                "unknown",
+                                            )
                                         ),
-                                        status=executor_status,
-                                        latency_ms=executor_latency_ms,
+                                        status=(
+                                            executor_status
+                                        ),
+                                        latency_ms=(
+                                            executor_latency_ms
+                                        ),
                                     )
 
-                            # Only increment this AFTER the action
-                            # actually reaches the executor.
+                            # Only increment this AFTER the
+                            # action actually reaches the
+                            # executor.
                             executed_actions += 1
 
                         except Exception as exc:
@@ -726,6 +868,52 @@ class AgentLoop:
                             f"Result: {result}"
                         )
 
+                        # =================================
+                        # RUNTIME STEP OUTCOME
+                        #
+                        # An executor error means the Step
+                        # failed, but the overall Run may
+                        # still continue and recover on the
+                        # next iteration.
+                        # =================================
+
+                        runtime_result_status = (
+                            result.get(
+                                "status",
+                                "unknown",
+                            )
+                        )
+
+                        if (
+                            runtime_result_status
+                            == "error"
+                        ):
+                            self.runtime.fail_step(
+                                runtime_step,
+                                outcome=(
+                                    result.get("error")
+                                    or "action_error"
+                                ),
+                            )
+
+                            telemetry_step_outcome = (
+                                "failed"
+                            )
+
+                        else:
+                            self.runtime.complete_step(
+                                runtime_step,
+                                outcome=(
+                                    runtime_result_status
+                                ),
+                            )
+
+                            telemetry_step_outcome = (
+                                "continue"
+                            )
+
+                        active_runtime_step = None
+
                         # ---------------------------------
                         # 8. Detect repeated/stuck
                         #    behavior immediately.
@@ -735,6 +923,14 @@ class AgentLoop:
                             history
                         ):
                             run_status = "stuck"
+
+                            self.runtime.stuck_run(
+                                runtime_run,
+                                outcome=(
+                                    "Repeated action "
+                                    "pattern detected"
+                                ),
+                            )
 
                             step_span.set_attribute(
                                 (
@@ -752,17 +948,25 @@ class AgentLoop:
                             return {
                                 "status": "stuck",
                                 "history": history,
+                                "run_id": (
+                                    runtime_run.run_id
+                                ),
                             }
 
-                        # This iteration completed
-                        # normally and another observation
-                        # will follow.
+                        # ---------------------------------
+                        # This iteration completed.
+                        #
+                        # The telemetry outcome should
+                        # reflect whether this Step actually
+                        # completed or failed.
+                        # ---------------------------------
+
                         step_span.set_attribute(
                             (
                                 "os_agent.step."
                                 "outcome"
                             ),
-                            "continue",
+                            telemetry_step_outcome,
                         )
 
                     # =====================================
@@ -779,6 +983,13 @@ class AgentLoop:
 
                 run_status = "max_steps"
 
+                self.runtime.max_steps_reached(
+                    runtime_run,
+                    outcome=(
+                        "Maximum step limit reached"
+                    ),
+                )
+
                 print(
                     "\n❌ Maximum step limit reached."
                 )
@@ -786,21 +997,41 @@ class AgentLoop:
                 return {
                     "status": "max_steps",
                     "history": history,
+                    "run_id": runtime_run.run_id,
                 }
 
-            except Exception:
+            except Exception as exc:
                 # -----------------------------------------
                 # Preserve unexpected failure as the final
-                # run status.
+                # runtime + telemetry status.
                 #
-                # Re-raise so existing application
-                # behavior remains unchanged.
-                #
-                # OpenTelemetry's active span context can
-                # also record the propagated exception.
+                # A currently active runtime Step must not
+                # remain RUNNING after a normal propagated
+                # Python exception.
                 # -----------------------------------------
 
                 run_status = "error"
+
+                error = (
+                    f"{type(exc).__name__}: "
+                    f"{exc}"
+                )
+
+                if (
+                    active_runtime_step
+                    is not None
+                    and active_runtime_step.completed_at
+                    is None
+                ):
+                    self.runtime.fail_step(
+                        active_runtime_step,
+                        outcome=error,
+                    )
+
+                self.runtime.fail_run(
+                    runtime_run,
+                    outcome=error,
+                )
 
                 raise
 
@@ -954,7 +1185,10 @@ class AgentLoop:
                 )
 
                 run_span.set_attribute(
-                    "os_agent.run.unattributed_latency_ms",
+                    (
+                        "os_agent.run."
+                        "unattributed_latency_ms"
+                    ),
                     unattributed_latency_ms,
                 )
 
@@ -978,6 +1212,9 @@ class AgentLoop:
         Convert the provider's structured response
         into the exact action dictionary expected
         by ActionExecutor.
+
+        This normalized semantic action is also the
+        action persisted by the execution runtime.
         """
 
         action_type = proposed[

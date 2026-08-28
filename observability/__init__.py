@@ -5,6 +5,9 @@ from .telemetry import (
     shutdown_telemetry,
 )
 
+from .bootstrap import(
+    ensure_observability
+)
 
 __all__ = [
     "configure_telemetry",

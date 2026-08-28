@@ -105,6 +105,29 @@ class ExecutionRuntime:
 
         return run
 
+    def stuck_run(
+        self,
+        run: Run,
+        outcome: str | None = None,
+    ) -> Run:
+        run.status = RunStatus.STUCK
+        run.completed_at = utc_now()
+        run.outcome = outcome
+
+        self.store.update_run(
+            run
+        )
+
+        self.record_event(
+            run_id=run.run_id,
+            event_type=EventType.RUN_STUCK,
+            data={
+                "outcome": outcome,
+            },
+        )
+
+        return run
+
     def fail_run(
         self,
         run: Run,

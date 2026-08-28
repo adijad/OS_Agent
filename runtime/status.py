@@ -7,6 +7,7 @@ class RunStatus(str, Enum):
 
     COMPLETED = "completed"
     FAILED = "failed"
+    STUCK = "stuck"
     BLOCKED = "blocked"
     CANCELLED = "cancelled"
     MAX_STEPS_REACHED = "max_steps_reached"
@@ -30,6 +31,7 @@ class EventType(str, Enum):
 
     RUN_COMPLETED = "run_completed"
     RUN_FAILED = "run_failed"
+    RUN_STUCK = "run_stuck"
     RUN_MAX_STEPS_REACHED = (
         "run_max_steps_reached"
     )
