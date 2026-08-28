@@ -19,6 +19,7 @@ class StepStatus(str, Enum):
 
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class EventType(str, Enum):
@@ -30,6 +31,7 @@ class EventType(str, Enum):
     RUN_STARTED = "run_started"
 
     RUN_COMPLETED = "run_completed"
+    RUN_CANCELLED = "run_cancelled"
     RUN_FAILED = "run_failed"
     RUN_STUCK = "run_stuck"
     RUN_MAX_STEPS_REACHED = (
@@ -43,6 +45,7 @@ class EventType(str, Enum):
     STEP_STARTED = "step_started"
 
     STEP_COMPLETED = "step_completed"
+    STEP_CANCELLED = "step_cancelled"
     STEP_FAILED = "step_failed"
 
     # =============================================

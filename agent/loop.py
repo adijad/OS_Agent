@@ -793,15 +793,66 @@ class AgentLoop:
                             # executor.
                             executed_actions += 1
 
-                        except Exception as exc:
-                            result = {
-                                "status": "error",
+                        except KeyboardInterrupt:
+                            # -----------------------------------------
+                            # USER-INITIATED CANCELLATION
+                            #
+                            # Ctrl+C is not a software failure.
+                            #
+                            # Persist the active Step and Run as
+                            # CANCELLED before allowing the interrupt
+                            # to propagate back to the CLI session.
+                            # -----------------------------------------
 
-                                "error": (
-                                    f"{type(exc).__name__}: "
-                                    f"{exc}"
-                                ),
-                            }
+                            run_status = "cancelled"
+
+                            cancellation_reason = (
+                                "Interrupted by user"
+                            )
+
+                            if (
+                                active_runtime_step
+                                is not None
+                                and active_runtime_step.completed_at
+                                is None
+                            ):
+                                self.runtime.cancel_step(
+                                    active_runtime_step,
+                                    outcome=cancellation_reason,
+                                )
+
+                            self.runtime.cancel_run(
+                                runtime_run,
+                                outcome=cancellation_reason,
+                            )
+
+                            raise
+
+                        except Exception as exc:
+                            run_status = "error"
+
+                            error = (
+                                f"{type(exc).__name__}: "
+                                f"{exc}"
+                            )
+
+                            if (
+                                active_runtime_step
+                                is not None
+                                and active_runtime_step.completed_at
+                                is None
+                            ):
+                                self.runtime.fail_step(
+                                    active_runtime_step,
+                                    outcome=error,
+                                )
+
+                            self.runtime.fail_run(
+                                runtime_run,
+                                outcome=error,
+                            )
+
+                            raise
 
                         # A model "finish" decision does
                         # not count as a physical action.
