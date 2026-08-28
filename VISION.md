@@ -18,53 +18,95 @@ The user should be able to say things such as:
 
 > Find a document on my computer, read it, and use information from it in another application.
 
-The agent should interpret the goal, observe the current computer state, decide what to do, visibly operate the computer, observe the result, and continue until the goal has been achieved.
+The agent should interpret the goal, create an explicit execution run, observe the current computer state, decide what to do, visibly operate the computer, observe the result, preserve meaningful execution state, and continue until the goal reaches a verified terminal outcome.
 
 The computer is the environment.
 
-Applications, websites, files, dialogs, windows, and controls are all parts of that environment.
+Applications, websites, files, dialogs, windows, controls, and other visible interfaces are all parts of that environment.
 
----
+The long-term system should not merely be an LLM capable of issuing mouse and keyboard commands.
 
-## Core Interaction Loop
-
-The fundamental agent loop is:
+It should become a general computer-use agent with:
 
 ```text
-Natural-language goal
-        ↓
-Understand intent
-        ↓
-Retrieve relevant prior experience / skills when useful
-        ↓
-Form or update a high-level plan when useful
-        ↓
-Observe the current computer
-        ↓
-Reason about the current state
-        ↓
-Choose the next semantic action
-        ↓
-Policy evaluation
-        ↓
-Act using the computer
-        ↓
-Observe the real outcome
-        ↓
-Verify progress
-        ↓
-Update working context / adapt / replan if necessary
-        ↓
-Continue until success
+real computer perception
+        +
+semantic tool use
+        +
+durable execution state
+        +
+policy and human control
+        +
+working memory
+        +
+hierarchical planning
+        +
+verification and recovery
+        +
+episodic experience
+        +
+procedural learning
+        +
+systematic observability and evaluation
 ```
-
-The agent should remain aware of the actual state of the computer throughout execution.
-
-It should not assume that an action succeeded merely because it attempted the action.
 
 ---
 
-## Visible Computer Use
+# Core Interaction Model
+
+A natural-language goal should create an explicit agent run.
+
+Conceptually:
+
+```text
+USER GOAL
+    ↓
+RUN CREATED
+    ↓
+Understand intent
+    ↓
+Retrieve relevant prior experience / skills when useful
+    ↓
+Form or update a semantic plan when useful
+    ↓
+STEP STARTED
+    ↓
+Observe current computer
+    ↓
+Reason about current state
+    ↓
+Choose next semantic action
+    ↓
+Policy evaluation
+    ↓
+Act using the computer
+    ↓
+Observe real outcome
+    ↓
+Verify progress
+    ↓
+Update execution state
+    ↓
+Update working context / adapt / replan
+    ↓
+STEP COMPLETED
+    ↓
+Persist meaningful execution state
+    ↓
+Continue until terminal outcome
+```
+
+The computer remains the source of truth throughout execution.
+
+The system must not assume that an action succeeded merely because the action was issued.
+
+Likewise, after process recovery or human intervention, persisted agent state must never override the current real computer state.
+
+The agent must re-observe reality and reconcile its prior knowledge with the environment that actually exists.
+
+---
+
+# Visible Computer Use
 
 OS Agent is intended to behave like an operator using the user's actual computer.
 
@@ -82,7 +124,7 @@ navigate interfaces
 
 The agent may use semantic information from the operating system, such as Windows UI Automation and accessibility data, to understand controls more reliably.
 
-However, this semantic information supports computer use rather than replacing it with hidden application-specific business APIs.
+However, semantic information supports computer use rather than replacing it with hidden application-specific business APIs.
 
 The long-term perception model should combine:
 
@@ -96,15 +138,25 @@ Accessibility / UI Automation
       Agent observation
 ```
 
-This allows the agent to use semantic controls when available while still being able to reason visually when accessibility information is incomplete.
+This allows the system to use semantic controls when available while still reasoning visually when accessibility information is incomplete.
+
+The purpose of the agent is visible computer operation.
+
+A browser is another application.
+
+A website is another environment presented through that application.
+
+A native Windows application is another environment.
+
+The architecture should remain general across all of them.
 
 ---
 
-## General Computer Tasks
+# General Computer Tasks
 
 The system is not tied to a particular application or website.
 
-Goals may range from simple local operations to complex multi-application workflows.
+Goals may range from simple local operations to long, multi-application workflows.
 
 Examples:
 
@@ -129,9 +181,17 @@ CROSS-APPLICATION
 
 "Find the PDF I downloaded yesterday, read the deadline,
 and add it to my calendar."
+
+
+LONGER STATEFUL TASK
+
+"Find three suitable roles based on my requirements,
+collect the important details,
+compare them,
+and prepare application material for the best one."
 ```
 
-The same high-level agent architecture should operate across all of these environments.
+The same high-level architecture should operate across all of these environments.
 
 ---
 
@@ -144,15 +204,19 @@ The following patterns define the intended long-term architecture.
 | Pattern | Role in OS Agent | Architectural Status |
 | --- | --- | --- |
 | Tool Use / Function Calling | Operate the real computer through semantic actions | Core and foundational |
+| Execution Runtime | Represent runs, steps, state transitions, persistence, and lifecycle | Core and foundational |
 | Hierarchical Planning | Decompose long or multi-application goals into semantic subgoals | First-class for complex tasks |
-| Memory and Context Management | Maintain useful state during long tasks and learn across tasks | First-class |
+| Memory and Context Management | Maintain useful task state and learn across experiences | First-class |
 | Verification and Recovery | Ground success in environmental evidence and recover from failures | First-class |
-| Orchestrator / Workers | Isolate specialized cognitive workloads when there is demonstrated need | Optional, later-stage |
+| Policy and Human Control | Prevent unsafe or unintended consequential actions | Mandatory control plane |
+| Orchestrator / Workers | Isolate specialized cognitive workloads when demonstrated useful | Optional, later-stage |
 
 The mature OS Agent should therefore be understood primarily as:
 
 ```text
 Tool-Using Computer Agent
+          +
+Durable Execution Runtime
           +
 Hierarchical Semantic Planning
           +
@@ -161,6 +225,8 @@ Working / Episodic / Procedural Memory
 Environment-Grounded Verification and Recovery
           +
 Policy and Human Control
+          +
+Observability and Evaluation
 ```
 
 It should not be designed primarily as a multi-agent system.
@@ -234,9 +300,554 @@ FileExplorerAgent
 
 The same general computer agent should operate different applications through observation and semantic action.
 
-The runtime should provide general capabilities.
+The runtime should provide generic capabilities.
 
 The model should provide task-specific intelligence.
+
+---
+
+# Execution Runtime
+
+As OS Agent progresses from short interactive tasks toward longer, stateful computer workflows, execution must become a first-class architectural abstraction.
+
+A user goal should create an explicit **Run**.
+
+That run progresses through **Steps**.
+
+Meaningful changes during execution produce structured **Events**.
+
+The execution runtime defines:
+
+```text
+What task exists?
+
+What state is the task in?
+
+What step is active?
+
+What work has already happened?
+
+What action is being attempted?
+
+What outcome was observed?
+
+Is the task running?
+
+Is it waiting for a human?
+
+Did it complete?
+
+Did it fail?
+
+Can it safely continue?
+```
+
+This information should not exist only inside an in-memory Python call stack.
+
+---
+
+## Runtime Is Different From Telemetry
+
+Execution runtime and observability are closely related, but they serve different purposes.
+
+```text
+Execution Runtime
+
+What task is this?
+
+What state is it in?
+
+What work has completed?
+
+What happened semantically?
+
+What can safely happen next?
+
+
+OpenTelemetry
+
+What happened operationally?
+
+How long did it take?
+
+Which subsystem was slow?
+
+Where did errors occur?
+
+How many resources were consumed?
+```
+
+Telemetry observes execution.
+
+The runtime defines execution.
+
+OpenTelemetry must therefore not become the primary persistence layer for agent state.
+
+A Grafana trace is not a substitute for knowing whether a task is currently waiting for approval.
+
+---
+
+# Runtime v0
+
+The first execution-runtime implementation should remain intentionally small.
+
+The initial abstractions should be:
+
+```text
+Run
+Step
+Event
+Status
+Outcome
+Timestamps
+```
+
+Conceptually:
+
+```text
+Run
+├── run_id
+├── goal
+├── status
+├── created_at
+├── started_at
+├── completed_at
+├── current_step
+├── outcome
+└── events
+```
+
+A step may contain:
+
+```text
+Step
+├── step_id
+├── run_id
+├── number
+├── status
+├── started_at
+├── completed_at
+├── proposed_action
+└── outcome
+```
+
+An event may contain:
+
+```text
+RuntimeEvent
+├── event_id
+├── run_id
+├── step_id
+├── type
+├── timestamp
+└── structured data
+```
+
+The exact schema should evolve from implementation experience rather than attempting to model every future concept immediately.
+
+---
+
+# Initial Runtime Persistence
+
+Runtime v0 should introduce local persistence from the beginning.
+
+The initial persistence layer does not require distributed infrastructure.
+
+A local SQLite store is sufficient while execution semantics are being established.
+
+Conceptually:
+
+```text
+AgentLoop
+    ↓
+Execution Runtime
+    ↓
+SQLite Run Store
+```
+
+The purpose is to make concepts such as:
+
+```text
+run identity
+run status
+steps
+events
+timestamps
+terminal outcomes
+```
+
+survive beyond transient Python variables.
+
+The runtime database should be treated as execution infrastructure rather than user memory.
+
+A local database file should not be committed to the repository.
+
+---
+
+# Run Lifecycle
+
+A run represents one user goal from creation through terminal outcome.
+
+Initial statuses may include:
+
+```text
+CREATED
+RUNNING
+COMPLETED
+FAILED
+BLOCKED
+CANCELLED
+MAX_STEPS_REACHED
+```
+
+As HITL is introduced, additional valid states should include:
+
+```text
+WAITING_FOR_APPROVAL
+WAITING_FOR_USER
+PAUSED_FOR_INTERVENTION
+```
+
+Conceptually:
+
+```text
+CREATED
+    ↓
+RUNNING
+    ↓
+WAITING_FOR_APPROVAL
+    ↓
+RUNNING
+    ↓
+WAITING_FOR_USER
+    ↓
+RUNNING
+    ↓
+COMPLETED
+```
+
+These are execution states.
+
+They should not be inferred from whether a Python function is currently blocking or running.
+
+A task waiting for a user is still a valid task.
+
+It is not necessarily an error.
+
+---
+
+# Runtime Events
+
+Execution should produce meaningful semantic runtime events.
+
+Examples may include:
+
+```text
+RUN_CREATED
+RUN_STARTED
+
+STEP_STARTED
+
+OBSERVATION_CAPTURED
+
+MODEL_REQUESTED
+ACTION_PROPOSED
+
+POLICY_ALLOWED
+POLICY_BLOCKED
+APPROVAL_REQUESTED
+APPROVAL_GRANTED
+APPROVAL_REJECTED
+
+ACTION_STARTED
+ACTION_COMPLETED
+ACTION_FAILED
+
+VERIFICATION_SUCCEEDED
+VERIFICATION_FAILED
+
+RETRY_SCHEDULED
+
+RUN_PAUSED
+RUN_RESUMED
+
+STEP_COMPLETED
+
+RUN_COMPLETED
+RUN_FAILED
+```
+
+Runtime events should represent meaningful lifecycle transitions.
+
+They should not become another low-level logging framework.
+
+Implementation details belong in logs and telemetry.
+
+Runtime events describe what happened to the agent task.
+
+---
+
+# Runtime and OpenTelemetry Correlation
+
+Runtime concepts should map naturally to telemetry.
+
+For example:
+
+```text
+Runtime                    Telemetry
+
+Run               →       os_agent.run
+
+Step              →       os_agent.step
+
+Observation       →       computer.observe
+
+Model decision    →       model.choose_action
+
+Policy decision   →       policy.check
+
+Action execution  →       executor.execute
+
+Verification      →       verifier.verify
+```
+
+Runtime identifiers should eventually be attached to relevant telemetry:
+
+```text
+os_agent.runtime.run_id
+os_agent.runtime.step_id
+```
+
+This allows an operational trace in Grafana to be correlated with the persisted semantic execution history.
+
+The systems remain distinct:
+
+```text
+SQLite runtime state
+= semantic execution lifecycle
+
+OpenTelemetry
+= traces, metrics, latency, resource consumption
+```
+
+---
+
+# Durable Execution Direction
+
+Runtime v0 establishes execution semantics and persistence.
+
+It does **not** yet claim full crash-safe resumability.
+
+True durable execution requires stronger semantics around:
+
+```text
+checkpointing
+action attempts
+uncertain effects
+reconciliation
+idempotency
+retry behavior
+crash boundaries
+resume behavior
+```
+
+These capabilities should be added incrementally after policy, HITL, and verification provide the information necessary to implement them safely.
+
+---
+
+# Checkpoint and Resume
+
+Long-running execution should eventually support checkpoints.
+
+Conceptually:
+
+```text
+RUNNING
+   ↓
+STEP 17 COMPLETE
+   ↓
+CHECKPOINT
+   ↓
+process terminates
+   ↓
+runtime restarts
+   ↓
+load checkpoint
+   ↓
+re-observe computer
+   ↓
+reconcile persisted knowledge
+with current environment
+   ↓
+continue safely
+```
+
+Resume must never blindly assume that the external computer remained unchanged.
+
+Persisted state records:
+
+```text
+what the agent previously believed
+
+what the agent attempted
+
+what outcomes were previously observed
+```
+
+The current computer determines:
+
+```text
+what is true now
+```
+
+The real environment remains authoritative.
+
+---
+
+# Side-Effect Safety
+
+Computer actions can have real consequences.
+
+Execution recovery must therefore distinguish:
+
+```text
+Action proposed
+
+Action authorized
+
+Action issued
+
+Execution result recorded
+
+Effect observed
+
+Effect verified
+```
+
+These are not equivalent states.
+
+For example:
+
+```text
+Agent clicks "Submit"
+        ↓
+Application performs submission
+        ↓
+OS Agent crashes before recording success
+```
+
+After restart, blindly repeating the click may produce a duplicate side effect.
+
+Future runtime versions should therefore evolve toward concepts such as:
+
+```text
+action identifiers
+attempt identifiers
+execution status
+effect reconciliation
+verification before retry
+idempotency where possible
+bounded retry policies
+```
+
+The system must never assume an action failed merely because the runtime failed to persist its result.
+
+It must also never assume that an action succeeded merely because it was issued.
+
+Environmental verification remains essential.
+
+---
+
+# Attempts and Recovery
+
+As verification and recovery mature, one semantic action may have multiple attempts.
+
+Conceptually:
+
+```text
+ACTION
+  ↓
+ATTEMPT 1
+  ↓
+observe
+  ↓
+verification failed
+  ↓
+diagnose
+  ↓
+ATTEMPT 2
+  ↓
+observe
+  ↓
+verification succeeded
+```
+
+Attempts should eventually become distinguishable so the system can measure:
+
+```text
+retry rate
+recovery success rate
+failure categories
+repeated-action rate
+time to recovery
+verification failures
+possible duplicate side effects
+```
+
+This abstraction should not be introduced before verification and recovery semantics exist.
+
+---
+
+# Replay and Inspection
+
+Completed and failed runs should eventually be inspectable.
+
+For example:
+
+```text
+Run: run_01ABC
+
+Goal:
+"Find the assignment PDF and add its deadline to my calendar."
+
+Status:
+COMPLETED
+
+Steps:
+1. Opened file browsing environment
+2. Located candidate PDF
+3. Verified document
+4. Read deadline
+5. Opened Calendar
+6. Requested approval
+7. Created event
+8. Verified event
+```
+
+Replay initially means reconstructing execution history for:
+
+```text
+debugging
+evaluation
+incident analysis
+learning
+```
+
+Replay does not automatically mean physically executing the actions again.
+
+The system should distinguish:
+
+```text
+inspect historical execution
+
+simulate reasoning from recorded observations
+
+re-run model decisions
+
+re-execute actions in a live environment
+```
+
+Each has different safety and reproducibility requirements.
 
 ---
 
@@ -244,7 +855,25 @@ The model should provide task-specific intelligence.
 
 Memory is not a single subsystem.
 
-OS Agent should distinguish three different forms of memory with different lifetimes and responsibilities.
+OS Agent should distinguish execution state from three different forms of agent memory.
+
+```text
+Execution State
+= what is happening to this run
+
+Working Memory
+= what information matters during this task
+
+Episodic Memory
+= what happened during previous tasks
+
+Procedural Memory
+= what reusable strategies were learned
+```
+
+These concepts may interact, but they must not collapse into one generic memory database.
+
+---
 
 ## Working Memory
 
@@ -292,11 +921,11 @@ into the core architecture.
 The desired idea is:
 
 ```text
-Runtime provides memory capability
+Runtime provides generic memory capability
             ↓
 Model decides what is worth remembering
             ↓
-Memory remains available throughout the task
+Information remains available during the run
             ↓
 Agent uses it to maintain progress
 ```
@@ -314,29 +943,29 @@ What failed?
 
 What should I avoid repeating?
 
-What information must survive beyond the last few actions?
+What information must survive beyond recent action history?
 ```
+
+Working memory may be persisted later as part of resumable runtime state, but it remains conceptually distinct from execution lifecycle state.
 
 ---
 
-## Episodic Memory
+# Episodic Memory
 
 Episodic memory records what actually happened during a particular task.
 
-For example:
+A persisted runtime history may later become one source for episodic-memory construction.
 
-```json
-{
-  "goal": "Find tax_return.pdf",
-  "observations": [],
-  "actions": [],
-  "policy_events": [],
-  "human_interactions": [],
-  "result": "success"
-}
+However:
+
+```text
+Runtime history
+≠ automatically episodic memory
 ```
 
-This is evidence about a specific run.
+Runtime records are operational execution evidence.
+
+Episodic memory is a curated representation of experience useful to future reasoning.
 
 A trajectory may eventually include:
 
@@ -357,13 +986,13 @@ completion evidence
 final outcome
 ```
 
-Episodic memory should preserve experience without assuming that every successful behavior should automatically become a reusable skill.
+Episodic memory should preserve experience without assuming every successful behavior should automatically become a reusable skill.
 
 ---
 
-## Procedural Memory
+# Procedural Memory
 
-A successful experience may be generalized into a reusable skill.
+A successful experience may be generalized into a reusable strategy.
 
 For example:
 
@@ -386,11 +1015,14 @@ For example:
 
 The procedure should capture useful structure without memorizing brittle coordinates or one exact trajectory.
 
-The three forms should remain conceptually separate:
+The memory architecture therefore remains:
 
 ```text
+Execution State
+= what is happening now
+
 Working Memory
-= what matters right now
+= what matters now
 
 Episodic Memory
 = what happened before
@@ -423,7 +1055,7 @@ Later:
 
 > Find `thesis.pdf`.
 
-The agent can retrieve the previous file-finding skill and use it as a strong prior, while still observing and reasoning about the current situation.
+The agent can retrieve the previous file-finding skill and use it as a strong prior while still observing and reasoning about the current situation.
 
 The desired behavior is:
 
@@ -457,7 +1089,7 @@ They should not become deterministic macro replay.
 
 A skill learned from one successful run may be incomplete.
 
-Therefore skills should be able to evolve through additional experience.
+Skills should evolve through additional experience.
 
 Conceptually:
 
@@ -479,7 +1111,7 @@ Failures
 Repair / improve strategy
 ```
 
-Skills may eventually track information such as:
+Skills may eventually track:
 
 ```text
 successful uses
@@ -501,7 +1133,7 @@ Failures are also learning signals.
 
 Planning is essential for complex and long-horizon tasks, but plans should remain semantic and adaptive.
 
-Avoid rigid action plans such as:
+Avoid rigid plans such as:
 
 ```text
 1. Click Chrome
@@ -543,6 +1175,7 @@ The intended separation is:
 Planner
 = WHAT needs to happen
 
+
 Computer Executor
 = HOW to accomplish the current subgoal
   in the observed environment
@@ -556,7 +1189,7 @@ For example:
 "Open Notepad."
 ```
 
-does not need an elaborate planner.
+does not require an elaborate plan.
 
 But:
 
@@ -568,15 +1201,11 @@ and add it to my calendar."
 
 benefits from decomposition.
 
-Initially, whether decomposition is useful should preferably be model-driven rather than encoded as a brittle deterministic task classifier.
+Initially, whether decomposition is useful should preferably be model-driven rather than encoded as a brittle deterministic classifier.
 
 A user goal may also require multiple learned skills.
 
 For example:
-
-> Find the assignment PDF I downloaded yesterday, open it, and summarize the requirements.
-
-The planner may compose:
 
 ```text
 find_recent_file
@@ -588,37 +1217,21 @@ read_document
 answer_user
 ```
 
-For another task:
-
-> Find a product name from an invoice and look it up on Amazon.
-
-The planner may compose:
-
-```text
-find_local_file
-        ↓
-read_document
-        ↓
-extract_product
-        ↓
-search_product
-```
-
 The planner should determine whether:
 
 ```text
-an existing skill solves the goal
+one existing skill solves the goal
 
 multiple skills should be composed
 
-an existing skill is only partially useful
+a skill is only partially useful
 
 or no useful skill exists and full reasoning is required
 ```
 
 Planning must remain adaptive.
 
-After meaningful subgoals or environmental changes, the system may revise the remaining plan rather than blindly executing an outdated script.
+After meaningful subgoals, failures, human interactions, or environmental changes, the system may revise the remaining plan rather than blindly executing outdated instructions.
 
 ---
 
@@ -649,15 +1262,15 @@ continue     diagnose
 
 Verification may operate at different levels.
 
-### Deterministic verification
+## Deterministic Verification
 
 Example:
 
 ```text
-Does Calculator show the completed expected expression?
+Does Calculator show the expected completed expression?
 ```
 
-### Semantic verification
+## Semantic Verification
 
 Example:
 
@@ -665,7 +1278,7 @@ Example:
 Is this actually the resume the user intended?
 ```
 
-### Model-assisted verification
+## Model-Assisted Verification
 
 Example:
 
@@ -675,15 +1288,27 @@ Does this product satisfy the user's qualitative requirements?
 
 Prefer the lowest-cost reliable verifier available.
 
-The system should distinguish:
+The system must distinguish:
 
 ```text
+Action issued
+= the runtime attempted the physical action
+
+
 Executor success
-= the action was physically issued
+= the executor completed its invocation
+
+
+Effect observed
+= the environment changed
+
+
+Effect verified
+= observed evidence supports the intended consequence
+
 
 Task success
-= the observed environment provides evidence
-  that the intended outcome was achieved
+= sufficient environmental evidence supports completion
 ```
 
 The model saying:
@@ -694,9 +1319,9 @@ The model saying:
 
 is not sufficient evidence on its own.
 
-Recovery should also be bounded.
+Recovery should be bounded.
 
-Repeated failures should not lead to endless retries.
+Repeated failures should not produce endless retries.
 
 The system should be able to:
 
@@ -711,13 +1336,27 @@ or stop safely
 
 depending on the situation.
 
+Recovery actions should eventually be recorded through the execution runtime as distinct failures, attempts, and outcomes.
+
 ---
 
 # Human-in-the-Loop
 
-Human involvement is a core part of the system, not an edge case.
+Human involvement is a core part of OS Agent rather than an edge case.
 
-There are three distinct forms of human interaction.
+There are three distinct forms of human interaction:
+
+```text
+Approval
+Clarification
+Intervention
+```
+
+Human interactions should become explicit runtime states and events.
+
+They should not remain merely blocking `input()` calls.
+
+---
 
 ## Approval
 
@@ -768,47 +1407,22 @@ not:
 "Click x=842, y=611"
 ```
 
-Approval should authorize the intended semantic consequence, not arbitrary future physical interaction.
+Approval authorizes the semantic consequence, not arbitrary future physical interaction.
 
----
-
-## Intervention
-
-The agent may encounter a state it cannot safely or confidently resolve.
-
-The system should allow:
+Runtime lifecycle:
 
 ```text
-Agent control
-      ↓
-Pause
-      ↓
-Human takes control of the same desktop session
-      ↓
-Human resolves the situation
-      ↓
-Resume
-      ↓
-Agent observes the new state
-      ↓
-Continue
+RUNNING
+    ↓
+APPROVAL_REQUIRED
+    ↓
+WAITING_FOR_APPROVAL
+      /             \
+ approved          rejected
+    ↓                 ↓
+RUNNING          continue safely /
+                 replan / terminate
 ```
-
-Examples may include:
-
-```text
-CAPTCHA
-unexpected authentication
-unrecognized dialog
-repeated failure
-environment state the agent cannot safely recover from
-```
-
-The agent must re-observe the environment after human intervention.
-
-It should never assume what the human changed.
-
-Human actions during intervention may later become useful learning signals.
 
 ---
 
@@ -823,11 +1437,65 @@ For example:
 Which one should I use?"
 ```
 
-Clarification is distinct from approval and intervention.
+The runtime may transition:
 
-The agent is not stuck technically.
+```text
+RUNNING
+    ↓
+WAITING_FOR_USER
+    ↓
+USER_RESPONSE_RECEIVED
+    ↓
+RUNNING
+```
+
+Clarification is distinct from approval.
+
+The agent is not necessarily blocked by capability.
 
 The user's intent is ambiguous.
+
+---
+
+## Intervention
+
+The agent may encounter a state it cannot safely or confidently resolve.
+
+The system should allow:
+
+```text
+Agent control
+      ↓
+PAUSED_FOR_INTERVENTION
+      ↓
+Human takes control
+      ↓
+Human resolves situation
+      ↓
+Agent resumes
+      ↓
+Fresh observation
+      ↓
+Reconcile execution state
+      ↓
+Continue
+```
+
+Examples may include:
+
+```text
+CAPTCHA
+unexpected authentication
+unrecognized dialog
+repeated failure
+environment state the agent cannot safely recover from
+```
+
+The agent must re-observe after human intervention.
+
+It should never assume what the human changed.
+
+Human actions during intervention may later become useful learning signals.
 
 ---
 
@@ -864,20 +1532,20 @@ For example:
 
 ```text
 click "Next page"
-→ likely allow
+→ ALLOW
 
 click "Place order"
-→ approval required
+→ APPROVAL_REQUIRED
 
 click "Delete permanently"
-→ approval required or block depending on context
+→ APPROVAL_REQUIRED or BLOCK depending on context
 ```
 
 A `click` is not inherently safe or dangerous.
 
 Its meaning depends on what the click will do.
 
-The policy layer should therefore consider context such as:
+Policy should therefore consider context such as:
 
 ```text
 current goal
@@ -886,12 +1554,41 @@ target role
 target name
 surrounding semantic state
 intended effect
+runtime state
 current task context
 ```
 
-The planner, memory system, learned skills, and model must never bypass the policy layer.
+The initial semantic policy contract should produce:
 
-The agent should never interpret broad computer access as permission to perform every available action.
+```text
+ALLOW
+
+APPROVAL_REQUIRED
+
+BLOCK
+```
+
+Policy outcomes should become runtime events and state transitions.
+
+For example:
+
+```text
+ACTION_PROPOSED
+       ↓
+POLICY
+   /     |      \
+ALLOW APPROVAL  BLOCK
+  │      │        │
+  │      │        └── RUN may become BLOCKED
+  │      │
+  │      └── RUN becomes WAITING_FOR_APPROVAL
+  │
+  └── executor may proceed
+```
+
+The planner, memory system, learned skills, model, and optional future workers must never bypass the policy layer.
+
+Broad access to a computer is not blanket permission to perform every available action.
 
 ---
 
@@ -916,10 +1613,10 @@ The goal is one general computer-use architecture.
 
 Specialized workers may become useful later when tasks contain genuinely different cognitive workloads with different context requirements.
 
-For example:
+Examples might include:
 
 ```text
-Research / analysis worker
+Research worker
 Document analysis worker
 Writing worker
 Computer operator
@@ -960,43 +1657,18 @@ OpenTelemetry and systematic evaluation are part of the engineering architecture
 
 Observability does not make decisions for the agent.
 
-It makes the behavior of the agent measurable and debuggable.
+It makes the behavior of the system measurable and debuggable.
 
-The whole architecture should eventually be observable across signals such as:
-
-```text
-run / task
-steps
-model calls
-provider and model
-token usage
-latency
-observations
-action proposals
-policy decisions
-execution results
-working-memory operations
-planning / replanning
-verification
-retries and failures
-human approvals
-clarifications
-interventions
-final outcome
-```
-
-A user goal should correspond to one coherent trace with nested spans for meaningful stages of execution.
-
-Conceptually:
+OS Agent now uses hierarchical OpenTelemetry traces corresponding to the real execution structure:
 
 ```text
 os_agent.run
     │
     ├── os_agent.step
-    │     ├── computer.observe
-    │     ├── model.choose_action
-    │     ├── policy.check
-    │     └── executor.execute
+    │     ├── os_agent.computer.observe
+    │     ├── os_agent.model.choose_action
+    │     ├── os_agent.policy.check
+    │     └── os_agent.executor.execute
     │
     ├── os_agent.step
     │     └── ...
@@ -1004,31 +1676,69 @@ os_agent.run
     └── completion
 ```
 
-Telemetry should make it possible to answer questions such as:
+The system records operational information such as:
 
 ```text
-Does planning improve task success?
+run status
+steps
+model calls
+provider
+model
+token usage
+cached tokens
+reasoning tokens
+model latency
+observation latency
+policy latency
+executor latency
+executed actions
+action type
+execution status
+total run latency
+```
 
-Does procedural memory reduce model calls or tokens?
+OpenTelemetry metrics aggregate behavior across runs.
 
-How much context does working memory add?
+Telemetry is exported through OTLP into a local observability stack containing:
+
+```text
+OpenTelemetry Collector
+Tempo
+Prometheus
+Grafana
+```
+
+The project includes a Grafana engineering dashboard for run, model, token, action, and latency metrics.
+
+The observability stack exists to answer questions such as:
+
+```text
+How long do tasks take?
+
+Where does task latency come from?
+
+How many model calls does a task require?
+
+How many tokens are used?
+
+Which action types are expensive?
+
+Which models require fewer steps?
+
+How frequently do tasks succeed?
+
+Where do retries occur?
+
+How frequently are approvals required?
 
 How often does verification catch false completion?
 
-Where does latency come from?
+Does planning improve performance?
 
-Which models perform best for planning versus execution?
-
-How frequently are approvals or interventions required?
-
-Which tasks cause repeated retries?
-
-Which actions fail most frequently?
-
-How much does a successful task cost?
+Does memory reduce repeated reasoning?
 ```
 
-Telemetry should be metadata-first and privacy-conscious.
+Telemetry should remain metadata-first and privacy-conscious.
 
 Sensitive information such as:
 
@@ -1044,77 +1754,123 @@ authentication data
 
 should not be recorded merely because instrumentation exists.
 
-Environment-grounded evaluations should remain the source of truth for benchmark success.
+Environment-grounded evaluation remains the source of truth for benchmark success.
 
 A model claiming completion is not sufficient evidence.
 
 ---
 
-# Canonical Architectural Direction
+# Evaluation Philosophy
 
-The long-term system should evolve toward:
+OS Agent should evaluate the entire interaction loop rather than only LLM output quality.
+
+Relevant measurements may include:
 
 ```text
-                           USER GOAL
-                               │
-                               ▼
-                       OPTIONAL PLANNER
-                               │
-                    semantic subgoals / replan
-                               │
-                               ▼
-                       CONTEXT MANAGER
-                      /               \
-                     ▼                 ▼
-              WORKING MEMORY      RETRIEVED SKILLS
-                     \                 /
-                      └───────┬────────┘
-                              ▼
-                       COMPUTER AGENT
-                    observe → reason
-                              │
-                              ▼
-                       SEMANTIC ACTION
-                              │
-                              ▼
-                           POLICY
-                    /          |          \
-                 allow      approval      block
-                   │            │
-                   │          HUMAN
-                   │            │
-                   └──────┬─────┘
-                          ▼
-                       EXECUTOR
-                          │
-                          ▼
-                    REAL COMPUTER
-                          │
-                          ▼
-                     OBSERVATION
-                          │
-                          ▼
-                       VERIFIER
-                     /          \
-                success        failure
-                   │              │
-                   ▼              ▼
-             next subgoal     recover / replan
-                   │              │
-                   └──────┬───────┘
-                          ▼
-                   TASK COMPLETION
-                          │
-                          ▼
-                  EPISODIC TRAJECTORY
-                          │
-                          ▼
-              PROCEDURAL SKILL LEARNING
+task success rate
+steps per task
+model calls
+tokens
+latency
+action failures
+grounding failures
+repeated actions
+retries
+recovery success
+verification failures
+human interventions
+approval frequency
+cost
+```
+
+Model comparisons should use the same tasks and the same environmental success criteria.
+
+A small benchmark indicating that one model performed better than another does not establish universal superiority.
+
+Architecture decisions should be driven by repeated evaluation rather than anecdotal impressions.
+
+---
+
+# Canonical Architectural Direction
+
+The long-term architecture should evolve toward:
+
+```text
+                              USER GOAL
+                                  │
+                                  ▼
+                           EXECUTION RUNTIME
+                         create / persist run
+                                  │
+                                  ▼
+                           OPTIONAL PLANNER
+                                  │
+                       semantic subgoals / replan
+                                  │
+                                  ▼
+                          CONTEXT MANAGER
+                         /               \
+                        ▼                 ▼
+                 WORKING MEMORY      RETRIEVED SKILLS
+                        \                 /
+                         └───────┬────────┘
+                                 ▼
+                          COMPUTER AGENT
+                         observe → reason
+                                 │
+                                 ▼
+                          SEMANTIC ACTION
+                                 │
+                                 ▼
+                              POLICY
+                       /          |          \
+                    allow      approval      block
+                      │            │            │
+                      │          HUMAN          │
+                      │            │            │
+                      └──────┬─────┘            │
+                             ▼                  │
+                          EXECUTOR              │
+                             │                  │
+                             ▼                  │
+                       REAL COMPUTER            │
+                             │                  │
+                             ▼                  │
+                        OBSERVATION              │
+                             │                  │
+                             ▼                  │
+                          VERIFIER               │
+                        /          \             │
+                   success        failure        │
+                      │              │           │
+                      ▼              ▼           │
+                next subgoal    recover / replan│
+                      │              │           │
+                      └──────┬───────┘           │
+                             ▼                   │
+                      RUNTIME STATE UPDATE ◄─────┘
+                             │
+                             ▼
+                         CHECKPOINT
+                       when appropriate
+                             │
+                             ▼
+                      TERMINAL OUTCOME
+                             │
+                             ▼
+                    EPISODIC TRAJECTORY
+                             │
+                             ▼
+                PROCEDURAL SKILL LEARNING
 ```
 
 OpenTelemetry and evaluation surround this architecture as an engineering control plane.
 
-Optional specialized cognitive workers may later sit around planning, analysis, or writing workloads, but they do not replace the single controlled computer-execution path.
+The execution runtime sits inside the system because it defines the lifecycle and state of the task itself.
+
+Optional specialized cognitive workers may later sit around planning, research, analysis, or writing workloads.
+
+They do not replace the single controlled computer-execution path.
 
 ---
 
@@ -1124,33 +1880,51 @@ The following principles should remain stable unless strong experimental evidenc
 
 1. **The computer is the environment.**
 
-2. **Real environmental state is the source of truth for completion.**
+2. **Real environmental state is the source of truth for current reality and task completion.**
 
-3. **The model proposes semantic actions rather than brittle coordinates or vendor-specific automation syntax whenever possible.**
+3. **A user goal corresponds to an explicit execution run.**
 
-4. **The runtime provides generic capabilities. The model provides task-specific reasoning.**
+4. **Execution state should not depend solely on an in-memory Python call stack.**
 
-5. **Do not create application-specific agents or hardcoded application workflows by default.**
+5. **Persisted execution state records previous knowledge and attempts, not guaranteed current environmental truth.**
 
-6. **Planning describes semantic subgoals, not rigid click sequences.**
+6. **After recovery or human intervention, the agent must re-observe the computer before continuing.**
 
-7. **Working memory must remain generic rather than becoming deterministic domain-specific task state.**
+7. **The model proposes semantic actions rather than brittle coordinates or vendor-specific automation syntax whenever possible.**
 
-8. **Working, episodic, and procedural memory are different systems with different lifetimes.**
+8. **The runtime provides generic capabilities. The model provides task-specific reasoning.**
 
-9. **Learned procedures guide execution. They do not become blind macro replay.**
+9. **Do not create application-specific agents or hardcoded application workflows by default.**
 
-10. **Policy and human control cannot be bypassed by planning, memory, tools, or learned skills.**
+10. **Planning describes semantic subgoals, not rigid click sequences.**
 
-11. **Verification should prefer real environmental evidence over model self-claims.**
+11. **Working memory must remain generic rather than becoming deterministic domain-specific task state.**
 
-12. **Physical desktop mutation remains serialized even if specialized cognitive workers are introduced later.**
+12. **Execution state, working memory, episodic memory, and procedural memory are distinct systems.**
 
-13. **New architectural complexity should be justified by evaluation and telemetry rather than added because a pattern appears sophisticated.**
+13. **Learned procedures guide execution. They do not become blind macro replay.**
 
-14. **Model/provider specialization should be evidence-driven. Logical roles do not automatically require separate LLMs.**
+14. **Policy and human control cannot be bypassed by planning, memory, tools, workers, or learned skills.**
 
-15. **The system should remain adaptive to the current computer state rather than assuming previous environments still apply.**
+15. **An issued action and a verified environmental effect are different states.**
+
+16. **Retries must consider whether a previous action may already have produced a side effect.**
+
+17. **Verification should prefer real environmental evidence over model self-claims.**
+
+18. **Human waiting states are valid execution states rather than automatic failures.**
+
+19. **Telemetry observes execution but does not replace the execution-state store.**
+
+20. **Physical desktop mutation remains serialized even if specialized cognitive workers are introduced later.**
+
+21. **New architectural complexity should be justified by evaluation and telemetry rather than added because a pattern appears sophisticated.**
+
+22. **Model/provider specialization should be evidence-driven. Logical roles do not automatically require separate LLMs.**
+
+23. **The system should remain adaptive to the current computer state rather than assuming previous environments still apply.**
+
+24. **Distributed execution should only be introduced when local execution semantics are stable and evaluation demonstrates a need.**
 
 ---
 
@@ -1158,143 +1932,280 @@ The following principles should remain stable unless strong experimental evidenc
 
 The architecture above describes the destination.
 
-The following sequence describes the intended implementation order.
+The following sequence defines the intended implementation order.
 
 This ordering is canonical so future work does not accidentally jump ahead or replace general mechanisms with task-specific shortcuts.
 
+---
+
+## 1. Tool Use / OS Interaction Foundation
+
 ```text
-1. TOOL USE / OS INTERACTION FOUNDATION
-
-   Reliable Windows observation
-   Screenshots and UI Automation
-   Semantic action schema
-   Mouse / keyboard / application control
-   Application lifecycle awareness
-   Observe → reason → act execution loop
-   Multiple model-provider abstraction
-   Environment-grounded evaluation
-
-
-2. OBSERVABILITY AND EVALUATION
-
-   OpenTelemetry traces
-   Model/provider metadata
-   Token usage
-   Model latency
-   Run-level latency
-   Hierarchical run / step traces
-   Observation timing
-   Policy timing
-   Executor timing
-   Metrics
-   OTLP export / observability backend
-   Environment-grounded benchmarks
-
-
-3. POLICY ENGINE
-
-   Semantic risk evaluation
-   Consequence-aware actions
-
-   ALLOW
-   APPROVAL_REQUIRED
-   BLOCK
-
-   Safety boundaries independent of the model
-
-
-4. HUMAN-IN-THE-LOOP
-
-   Approval
-   Clarification
-   Intervention
-   Pause / resume
-   Fresh observation after human actions
-   Semantic approval rather than coordinate approval
-
-
-5. WORKING MEMORY AND CONTEXT MANAGEMENT
-
-   Generic task blackboard
-   Important discoveries
-   Collected evidence
-   Unresolved failures
-   Active subgoal
-   Remaining work
-   Compact context for long trajectories
-   Avoid deterministic domain-specific task state
-
-
-6. HIERARCHICAL PLANNING
-
-   Semantic task decomposition
-   Optional planning for complex goals
-   Adaptive replanning
-   Subgoal management
-   Skill composition
-   No rigid click-by-click plans
-
-
-7. VERIFICATION AND RECOVERY
-
-   Environment-grounded outcome verification
-   Deterministic verification when possible
-   Semantic verification when required
-   Model-assisted verification when necessary
-   Bounded retries
-   Failure diagnosis
-   Alternate strategies
-   Replanning
-   Clarification or intervention when recovery fails
-
-
-8. EPISODIC TRAJECTORY RECORDING
-
-   Preserve complete task experiences
-   Observations
-   Actions
-   Policy events
-   Working-memory updates
-   HITL events
-   Verification results
-   Failures
-   Completion evidence
-   Final outcomes
-
-   Build a learning dataset from real executions
-
-
-9. PROCEDURAL SKILL LEARNING
-
-   Extract generalized reusable strategies
-   Avoid brittle macro replay
-   Track successful and failed uses
-   Track confidence
-   Refine skills through additional experience
-
-
-10. SKILL RETRIEVAL AND COMPOSITION
-
-    Retrieve relevant procedures semantically
-    Use procedures as priors rather than scripts
-    Compose multiple skills for complex goals
-    Adapt retrieved knowledge to the current environment
-
-
-11. OPTIONAL SPECIALIZED COGNITIVE WORKERS
-
-    Introduce only for demonstrated specialization needs
-    Separate cognitively different workloads when beneficial
-    Allow different models where telemetry justifies it
-    Keep physical computer control serialized
+Reliable Windows observation
+Screenshots and UI Automation
+Semantic action schema
+Mouse / keyboard / application control
+Application lifecycle awareness
+Observe → reason → act execution loop
+Multiple model-provider abstraction
+Environment-grounded evaluation
 ```
 
-The presence of a later-stage design pattern in the long-term architecture does not mean it should be implemented before its prerequisites.
+**Status: Established foundation**
+
+---
+
+## 2. Observability and Evaluation v1
+
+```text
+OpenTelemetry traces
+Provider and model metadata
+Token usage
+Model latency
+Run-level latency
+Hierarchical run / step traces
+Observation timing
+Policy timing
+Executor timing
+Metrics
+OTLP export
+Tempo traces
+Prometheus metrics
+Grafana visualization
+Environment-grounded benchmarks
+```
+
+**Status: Complete**
+
+---
+
+## 3. Execution Runtime v0
+
+```text
+Explicit Run abstraction
+Explicit Step abstraction
+Structured runtime Events
+Run and step identifiers
+Run statuses
+Step statuses
+Timestamps
+Outcomes
+Local SQLite persistence
+Basic run inspection
+Runtime IDs correlated with OpenTelemetry
+```
+
+The objective is to define OS Agent execution semantics.
+
+Runtime v0 does not yet promise crash-safe resume.
+
+**Status: Current phase**
+
+---
+
+## 4. Policy Engine v1
+
+```text
+Semantic risk evaluation
+Consequence-aware decisions
+
+ALLOW
+
+APPROVAL_REQUIRED
+
+BLOCK
+
+Safety boundary independent of model reasoning
+Policy decisions recorded as runtime events
+```
+
+---
+
+## 5. Human-in-the-Loop v1
+
+```text
+Approval
+Clarification
+Intervention
+
+WAITING_FOR_APPROVAL
+WAITING_FOR_USER
+PAUSED_FOR_INTERVENTION
+
+Semantic approval rather than coordinate approval
+Fresh observation after human actions
+Runtime-aware human interaction
+```
+
+---
+
+## 6. Runtime Pause / Resume Semantics
+
+```text
+Run pause
+Run resume
+Human waiting states
+Persisted paused state
+Resume entry point
+Fresh observation on resume
+Runtime reconciliation
+```
+
+This is not yet full crash recovery.
+
+It establishes intentional pause and continuation semantics.
+
+---
+
+## 7. Working Memory and Context Management
+
+```text
+Generic task blackboard
+Important discoveries
+Collected evidence
+Unresolved failures
+Active subgoal
+Remaining work
+Compact model context for long trajectories
+Avoid deterministic domain-specific state
+```
+
+---
+
+## 8. Hierarchical Planning
+
+```text
+Semantic task decomposition
+Optional planning for complex goals
+Adaptive replanning
+Subgoal management
+Skill composition
+No rigid click-by-click plans
+```
+
+---
+
+## 9. Verification and Recovery
+
+```text
+Environment-grounded outcome verification
+Deterministic verification when possible
+Semantic verification when required
+Model-assisted verification when necessary
+
+Bounded retries
+Failure diagnosis
+Alternate strategies
+Replanning
+Clarification
+Intervention
+```
+
+The runtime should begin distinguishing failures and recovery attempts here.
+
+---
+
+## 10. Advanced Runtime Durability
+
+```text
+Checkpoint creation
+Checkpoint loading
+Crash recovery
+Attempt identifiers
+Action identifiers
+Side-effect uncertainty
+Effect reconciliation
+Verification before retry
+Bounded retry policies
+Safe resume
+```
+
+Durability should be introduced only after verification and policy provide enough information to resume safely.
+
+---
+
+## 11. Episodic Trajectory Construction
+
+```text
+Construct meaningful task experiences from runtime history
+
+Goal
+Observations
+Actions
+Policy events
+Working-memory updates
+Human interactions
+Verification results
+Failures
+Retries
+Completion evidence
+Final outcome
+```
+
+Build a learning dataset from real execution.
+
+---
+
+## 12. Procedural Skill Learning
+
+```text
+Extract generalized reusable strategies
+Avoid brittle macro replay
+Track successful and failed uses
+Track confidence
+Refine procedures through experience
+```
+
+---
+
+## 13. Skill Retrieval and Composition
+
+```text
+Retrieve relevant procedures semantically
+Use procedures as priors rather than scripts
+Compose multiple skills for complex goals
+Adapt retrieved knowledge to the current environment
+```
+
+---
+
+## 14. Replay and Long-Running Execution
+
+```text
+Inspect historical runs
+Replay reasoning from captured state where appropriate
+Compare historical decisions
+Support longer persisted workflows
+Improve crash resilience
+Investigate safe live re-execution only where justified
+```
+
+Physical-action replay should never be treated as equivalent to historical inspection.
+
+---
+
+## 15. Optional Specialized Cognitive Workers
+
+```text
+Introduce only for demonstrated specialization needs
+Separate cognitively different workloads when beneficial
+Allow different models where telemetry justifies it
+Keep physical computer control serialized
+```
+
+---
+
+# Do Not Jump Ahead
+
+The presence of a later-stage capability in the long-term architecture does not mean it should be implemented before its prerequisites.
 
 In particular:
 
 ```text
-Do not jump to long-term procedural memory
+Do not build sophisticated crash recovery
+before execution semantics, policy, and verification exist.
+
+Do not build long-term procedural memory
 before working memory and reliable trajectories exist.
 
 Do not add powerful long-horizon planning
@@ -1308,20 +2219,33 @@ with application-specific agents
 when a general capability can solve the problem.
 
 Do not introduce deterministic task-state schemas
-for individual domains such as shopping,
-job searching, email, or file management.
+for domains such as shopping,
+job searching,
+email,
+or file management.
 
 Do not treat model-declared success
 as proof that a real-world task succeeded.
+
+Do not use OpenTelemetry
+as the persistence layer for execution state.
+
+Do not assume a missing action result means
+that a real-world side effect did not occur.
+
+Do not introduce distributed queues,
+workflow engines,
+or orchestration systems
+before the local runtime demonstrates a concrete need.
 ```
 
 ---
 
 # Current Development Position
 
-The project has already established much of the Tool Use / OS Interaction foundation.
+The project has established the Tool Use / OS Interaction foundation.
 
-Current capabilities include:
+Current computer-use capabilities include:
 
 ```text
 Windows desktop observation
@@ -1329,6 +2253,7 @@ Active-window observation
 UI Automation controls
 Screenshot perception
 Semantic target IDs
+UI control values
 
 Visible mouse interaction
 Literal text input
@@ -1338,10 +2263,8 @@ Application opening
 Application focusing
 
 Application lifecycle reasoning
-
 Semantic action validation
 Action execution
-Basic policy boundary
 
 Natural-language agent loop
 
@@ -1349,71 +2272,106 @@ OpenAI provider
 Anthropic provider
 
 Cross-model evaluation
-
 Environment-grounded Calculator evaluation
 
 Browser interaction
-
-UI control value observation
-
-Initial OpenTelemetry model tracing
-Token usage tracking
-Model latency tracking
-Provider/model metadata
 ```
 
-The project is currently in:
+The project has also completed **Observability v1**.
+
+Current observability capabilities include:
 
 ```text
-PHASE 2
+One coherent trace per user goal
 
-OBSERVABILITY AND EVALUATION
-```
-
-The immediate observability objective is:
-
-```text
-ONE USER GOAL
-      ↓
-ONE COHERENT TRACE
-      ↓
 os_agent.run
-    │
-    ├── os_agent.step
-    │     └── os_agent.model.choose_action
-    │
-    ├── os_agent.step
-    │     └── os_agent.model.choose_action
-    │
-    └── ...
-```
-
-After hierarchical run and step tracing is validated, the next observability increment should be:
-
-```text
+    ↓
 os_agent.step
-    ├── computer.observe
-    ├── model.choose_action
-    ├── policy.check
-    └── executor.execute
+    ↓
+computer.observe
+model.choose_action
+policy.check
+executor.execute
+
+Provider / model telemetry
+
+Input tokens
+Output tokens
+Total tokens
+Cached tokens
+Reasoning tokens
+
+Model latency
+Observation latency
+Policy latency
+Executor latency
+Total run latency
+
+Run-level aggregation
+
+OpenTelemetry metrics
+
+OTLP export
+
+OpenTelemetry Collector
+
+Tempo traces
+
+Prometheus metrics
+
+Grafana engineering dashboard
+
+Docker Compose observability environment
 ```
 
-Then:
+The current development phase is:
 
 ```text
-OpenTelemetry metrics
-        ↓
-OTLP export
-        ↓
-trace / metrics backend
+PHASE 3
+
+EXECUTION RUNTIME V0
 ```
 
-After the observability foundation is sufficiently stable:
+The immediate objective is:
+
+```text
+USER GOAL
+    ↓
+CREATE RUN
+    ↓
+Persist run identity and status
+    ↓
+STEP
+    ↓
+Persist meaningful execution events
+    ↓
+Terminal outcome
+    ↓
+Persist final run state
+```
+
+The first runtime version should remain intentionally small:
+
+```text
+Run
+Step
+Event
+Status
+Outcome
+Timestamps
+SQLite persistence
+Basic inspection
+Telemetry correlation
+```
+
+After Runtime v0 is stable:
 
 ```text
 Policy Engine v1
         ↓
-Human-in-the-Loop
+Human-in-the-Loop v1
+        ↓
+Runtime pause / resume
         ↓
 Working Memory
         ↓
@@ -1421,10 +2379,37 @@ Hierarchical Planning
         ↓
 Verification / Recovery
         ↓
+Advanced Runtime Durability
+        ↓
 Episodic Trajectories
         ↓
 Procedural Learning
 ```
+
+---
+
+# Runtime Evolution
+
+The runtime should evolve incrementally rather than attempting full durability immediately.
+
+```text
+Runtime v0
+Execution semantics + persistence
+        ↓
+Runtime v1
+HITL lifecycle + intentional pause/resume
+        ↓
+Runtime v2
+Verification-aware checkpoint/recovery
+        ↓
+Runtime v3
+Attempts + side-effect reconciliation
+        ↓
+Runtime v4
+Replay + long-running execution
+```
+
+Each version should be justified by capabilities that already exist.
 
 ---
 
@@ -1434,19 +2419,37 @@ Build bottom-up and preserve generality.
 
 First give the system reliable eyes and hands.
 
-Then make the observe → reason → act loop measurable.
+Then make the observe -> reason -> act loop measurable.
 
-Then establish safety and human control before increasing long-horizon autonomy.
+Then define what an execution run actually is.
 
-Then add working memory and context management.
+Then establish semantic safety and human control before increasing autonomy.
 
-Then add hierarchical planning and environment-grounded verification.
+Then add generic working memory.
 
-Then record rich episodic trajectories and learn procedural skills from real evidence.
+Then add hierarchical planning.
 
-Only introduce specialized cognitive workers if a demonstrated workload justifies the additional complexity.
+Then add environment-grounded verification and recovery.
 
-Avoid hiding the computer-use problem behind application-specific APIs or large agent frameworks before the core interaction loop is understood.
+Then strengthen durability using the execution evidence now available.
+
+Then construct episodic trajectories.
+
+Then learn procedural skills from real experience.
+
+Only introduce specialized cognitive workers if a demonstrated workload justifies the complexity.
+
+Avoid hiding the computer-use problem behind:
+
+```text
+application-specific APIs
+large agent frameworks
+workflow engines
+multi-agent abstractions
+distributed systems
+```
+
+before the underlying execution semantics are understood.
 
 The objective is not to collect as many:
 
@@ -1465,6 +2468,8 @@ The objective is to build a general computer agent that becomes more capable thr
 
 ```text
 observable
+durable
+inspectable
 verifiable
 safe
 adaptive
@@ -1476,7 +2481,7 @@ and aware of the real computer it is operating
 
 # Major Proof Points
 
-## Proof Point 1: Generic application execution
+## Proof Point 1: Generic Application Execution
 
 > A user types "Open Notepad and write Hello World."
 
@@ -1484,7 +2489,7 @@ The system should determine what to do from the natural-language goal and the ob
 
 ---
 
-## Proof Point 2: Cross-application generality
+## Proof Point 2: Cross-Application Generality
 
 > A user types "Open Calculator and calculate 913 × 47."
 
@@ -1492,7 +2497,7 @@ The same agent architecture should accomplish the goal without a Calculator-spec
 
 ---
 
-## Proof Point 3: Browser research with grounded evidence
+## Proof Point 3: Browser Research With Grounded Evidence
 
 The agent should be capable of:
 
@@ -1506,11 +2511,48 @@ recovering direct URLs
 and returning grounded information
 ```
 
-without introducing a browser-specific intelligence architecture.
+without introducing browser-specific intelligence architecture.
 
 ---
 
-## Proof Point 4: Safe consequential action
+## Proof Point 4: Observable Execution
+
+A user goal should produce one inspectable trace showing:
+
+```text
+run
+steps
+observations
+model decisions
+policy checks
+executor operations
+latency
+token usage
+final outcome
+```
+
+Operational metrics should be viewable through the OS Agent Grafana dashboard.
+
+---
+
+## Proof Point 5: Explicit Persistent Run
+
+A user goal should create a runtime record with:
+
+```text
+run ID
+status
+steps
+events
+timestamps
+outcome
+```
+
+The semantic history of execution should remain inspectable after `AgentLoop.run()` returns.
+
+---
+
+## Proof Point 6: Safe Consequential Action
 
 The agent should be able to reach a consequential action such as:
 
@@ -1523,9 +2565,27 @@ submit form
 
 then pause before execution, describe the semantic consequence, request approval, and correctly handle approval or rejection.
 
+The runtime should represent the waiting state explicitly.
+
 ---
 
-## Proof Point 5: Generic long-horizon working memory
+## Proof Point 7: Runtime-Aware Human Interaction
+
+The agent should be capable of becoming:
+
+```text
+WAITING_FOR_APPROVAL
+WAITING_FOR_USER
+PAUSED_FOR_INTERVENTION
+```
+
+without treating those states as task failure.
+
+After human action, the agent should re-observe the environment before resuming.
+
+---
+
+## Proof Point 8: Generic Long-Horizon Working Memory
 
 The agent should complete a task requiring information to survive across many steps without introducing a domain-specific task-state schema.
 
@@ -1539,7 +2599,7 @@ or:
 
 ---
 
-## Proof Point 6: Adaptive planning
+## Proof Point 9: Adaptive Planning
 
 The agent should decompose a complex goal into semantic subgoals while continuing to react to the real environment.
 
@@ -1547,7 +2607,7 @@ If the environment changes or a planned route fails, it should revise the plan i
 
 ---
 
-## Proof Point 7: Verification and recovery
+## Proof Point 10: Verification and Recovery
 
 The agent should recognize when an attempted action did not produce the intended result.
 
@@ -1566,7 +2626,23 @@ rather than repeatedly issuing the same failing action.
 
 ---
 
-## Proof Point 8: Learning from experience
+## Proof Point 11: Safe Recovery After Interrupted Execution
+
+A later runtime version should be able to recover from interrupted execution without blindly replaying prior actions.
+
+Recovery should:
+
+```text
+load persisted execution state
+re-observe the real computer
+determine whether previous effects occurred
+reconcile prior state with current reality
+continue only when safe
+```
+
+---
+
+## Proof Point 12: Learning From Experience
 
 After accumulating successful and failed trajectories, the system should extract reusable procedural knowledge.
 
@@ -1581,7 +2657,9 @@ OS Agent should eventually demonstrate all of the following:
 ```text
 A user expresses a goal naturally.
 
-The system understands the goal.
+The goal creates an explicit durable run.
+
+The runtime knows the lifecycle state of that run.
 
 The system determines whether planning is useful.
 
@@ -1598,7 +2676,11 @@ Policy evaluates their consequences.
 The user is involved when approval,
 clarification, or intervention is necessary.
 
+Human waiting states remain valid persisted run states.
+
 The agent visibly operates the computer.
+
+Actions and attempts are distinguishable.
 
 The agent observes what actually happened.
 
@@ -1606,21 +2688,40 @@ The agent verifies progress using environmental evidence.
 
 Failures lead to bounded recovery or replanning.
 
-Successful and failed trajectories become learning signals.
+Interrupted execution can eventually resume safely.
+
+Persisted runtime state never overrides fresh environmental truth.
+
+Successful and failed executions become episodic learning signals.
 
 Reusable procedures improve future execution.
 
 Telemetry measures behavior, cost, latency,
-reliability, and human involvement.
+reliability, recovery, and human involvement.
+
+Runtime state remains distinct from telemetry and memory.
 
 The system remains general across applications
 rather than becoming a collection of app-specific bots.
+
+Physical desktop mutation remains serialized.
+
+Architectural complexity is introduced only when
+evaluation demonstrates that it solves a real problem.
 ```
 
 The ultimate goal is not merely:
 
 > An LLM that can click buttons.
 
+It is not merely:
+
+> A workflow engine connected to an LLM.
+
+It is not merely:
+
+> A collection of application-specific automation scripts.
+
 The goal is:
 
-> **A general, observable, safe, adaptive computer-use agent that can plan, act, verify, collaborate with humans, learn from experience, and become more capable over time while operating the user's real computer.**
+> **A general, observable, durable, safe, adaptive computer-use agent that can understand goals, maintain execution state, plan, operate the user's real computer, verify real-world outcomes, collaborate with humans, recover from failure, learn from experience, and become more capable over time.**
