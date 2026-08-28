@@ -9,3 +9,8 @@ __pycache__/
 Thumbs.db
 .runtime/
 !.env.example
+# Local execution runtime state
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
