@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 
 class PolicyDecision(str, Enum):
@@ -22,15 +23,40 @@ class PolicyResult:
     """
     Structured result returned by policy
     evaluation.
-
-    decision:
-        Whether execution is allowed,
-        requires human approval, or is blocked.
-
-    reason:
-        Human-readable explanation for why
-        the decision was made.
     """
 
     decision: PolicyDecision
     reason: str
+
+
+@dataclass(frozen=True)
+class PolicyContext:
+    """
+    Semantic context used by the PolicyEngine
+    when deciding whether an action may execute.
+
+    goal:
+        The user's current goal.
+
+    action:
+        The normalized OS Agent action.
+
+    target:
+        The grounded semantic target from the
+        CURRENT computer observation, if one
+        exists.
+
+    state:
+        The current observed computer state.
+    """
+
+    goal: str
+
+    action: dict[str, Any]
+
+    target: (
+        dict[str, Any]
+        | None
+    )
+
+    state: dict[str, Any]
