@@ -24,8 +24,12 @@ COMPOSE_FILE = (
 OTLP_HOST = "127.0.0.1"
 OTLP_PORT = 4318
 
+GRAFANA_HOST = "127.0.0.1"
+GRAFANA_PORT = 3000
+
 GRAFANA_HEALTH_URL = (
-    "http://localhost:3000/api/health"
+    f"http://{GRAFANA_HOST}:"
+    f"{GRAFANA_PORT}/api/health"
 )
 
 

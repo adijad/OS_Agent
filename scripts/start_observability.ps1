@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
@@ -6,11 +6,15 @@ $ComposeFile = Join-Path `
     $ProjectRoot `
     "docker-compose-observability.yml"
 
+$GrafanaBaseUrl = `
+    "http://127.0.0.1:3000"
+
 $GrafanaHealthUrl = `
-    "http://localhost:3000/api/health"
+    "$GrafanaBaseUrl/api/health"
 
 $GrafanaSearchUrl = `
-    "http://localhost:3000/api/search?query=OS_Agent"
+    "$GrafanaBaseUrl/api/search?query=OS_Agent"
+
 
 Write-Host ""
 Write-Host "============================"
@@ -18,13 +22,16 @@ Write-Host "OS AGENT OBSERVABILITY"
 Write-Host "============================"
 Write-Host ""
 
+
 # ============================================
 # CHECK DOCKER
 # ============================================
 
 Write-Host "Checking Docker..."
 
-docker info *> $null
+# Run through cmd so Docker warnings written to stderr
+# do not become terminating PowerShell error records.
+cmd.exe /c "docker info >nul 2>&1"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
@@ -34,6 +41,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Docker is running."
+
 
 # ============================================
 # START OBSERVABILITY STACK
@@ -52,6 +60,7 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+
 # ============================================
 # WAIT FOR GRAFANA
 # ============================================
@@ -66,7 +75,8 @@ for ($i = 0; $i -lt 30; $i++) {
     try {
         $Health = Invoke-RestMethod `
             -Uri $GrafanaHealthUrl `
-            -TimeoutSec 2
+            -TimeoutSec 2 `
+            -ErrorAction Stop
 
         if ($Health) {
             $GrafanaReady = $true
@@ -86,6 +96,7 @@ if (-not $GrafanaReady) {
 
 Write-Host "Grafana is ready."
 
+
 # ============================================
 # FIND OS_AGENT DASHBOARD
 # ============================================
@@ -97,19 +108,23 @@ try {
 
     $Dashboards = Invoke-RestMethod `
         -Uri $GrafanaSearchUrl `
-        -TimeoutSec 5
+        -TimeoutSec 5 `
+        -ErrorAction Stop
 
     $Dashboard = $Dashboards |
         Where-Object {
             $_.type -eq "dash-db" -and
-            $_.title -eq "OS_Agent"
+            (
+                $_.title -eq "OS_Agent" -or
+                $_.title -eq "OS Agent"
+            )
         } |
         Select-Object -First 1
 
     if ($Dashboard) {
 
         $DashboardUrl = (
-            "http://localhost:3000" +
+            $GrafanaBaseUrl +
             $Dashboard.url
         )
 
@@ -124,7 +139,7 @@ try {
         Write-Host "Opening Grafana dashboards instead."
 
         Start-Process `
-            "http://localhost:3000/dashboards"
+            "$GrafanaBaseUrl/dashboards"
     }
 }
 catch {
@@ -134,8 +149,9 @@ catch {
     Write-Host "Opening Grafana."
 
     Start-Process `
-        "http://localhost:3000"
+        $GrafanaBaseUrl
 }
+
 
 Write-Host ""
 Write-Host "Observability stack is ready."
