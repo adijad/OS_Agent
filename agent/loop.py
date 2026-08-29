@@ -18,7 +18,15 @@ from runtime import (
 
 from .executor import ActionExecutor
 from .models import create_model_provider
-from .policy import PolicyEngine
+from .policy import (
+    PolicyEngine,
+    PolicyViolationError,
+)
+
+from .policy_types import (
+    PolicyContext,
+    PolicyDecision,
+)
 
 
 tracer = get_tracer(
@@ -637,6 +645,22 @@ class AgentLoop:
                                 f"{target_info['name']!r}"
                             )
 
+
+                        # ---------------------------------
+                        # POLICY CONTEXT
+                        #
+                        # Policy evaluates the semantic
+                        # meaning of the proposed action,
+                        # not only the low-level primitive.
+                        # ---------------------------------
+
+                        policy_context = PolicyContext(
+                            goal=goal,
+                            action=action,
+                            target=target_info,
+                            state=state,
+                        )
+
                         # ---------------------------------
                         # 6. Policy check + physical
                         #    execution.
@@ -656,9 +680,10 @@ class AgentLoop:
                                 )
 
                                 try:
-                                    self.policy.check(
-                                        action=action,
-                                        state=state,
+                                    policy_result = (
+                                        self.policy.evaluate(
+                                            context=policy_context,
+                                        )
                                     )
 
                                     policy_span.set_attribute(
@@ -666,8 +691,41 @@ class AgentLoop:
                                             "os_agent.policy."
                                             "outcome"
                                         ),
-                                        "allow",
+                                        policy_result.decision.value,
                                     )
+
+                                    policy_span.set_attribute(
+                                        (
+                                            "os_agent.policy."
+                                            "reason"
+                                        ),
+                                        policy_result.reason,
+                                    )
+
+                                    # =================================
+                                    # POLICY ENFORCEMENT
+                                    #
+                                    # Only an explicit ALLOW may reach
+                                    # the physical executor.
+                                    #
+                                    # BLOCK and APPROVAL_REQUIRED are
+                                    # both stopped here.
+                                    #
+                                    # Their distinct runtime lifecycle
+                                    # semantics are added in 4E before
+                                    # consequential rules are enabled.
+                                    # =================================
+
+                                    if (
+                                        policy_result.decision
+                                        != PolicyDecision.ALLOW
+                                    ):
+                                        raise PolicyViolationError(
+                                            (
+                                                f"{policy_result.decision.value}: "
+                                                f"{policy_result.reason}"
+                                            )
+                                        )
 
                                 finally:
                                     policy_latency_ms = (
