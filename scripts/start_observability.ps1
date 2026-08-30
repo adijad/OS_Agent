@@ -155,3 +155,6 @@ catch {
 
 Write-Host ""
 Write-Host "Observability stack is ready."
+
+
+

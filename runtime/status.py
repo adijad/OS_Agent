@@ -66,6 +66,12 @@ class EventType(str, Enum):
 
     POLICY_ALLOWED = "policy_allowed"
 
+    POLICY_APPROVAL_REQUIRED = (
+        "policy_approval_required"
+    )
+
+    POLICY_BLOCKED = "policy_blocked"
+
     # =============================================
     # EXECUTION
     # =============================================

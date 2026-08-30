@@ -12,6 +12,7 @@ from observability.metrics import (
 )
 
 from runtime import (
+    EventType,
     ExecutionRuntime,
     SQLiteRunStore,
 )
@@ -700,6 +701,41 @@ class AgentLoop:
                                             "reason"
                                         ),
                                         policy_result.reason,
+                                    )
+
+                                    # =================================
+                                    # PERSIST POLICY DECISION
+                                    # =================================
+
+                                    if (
+                                        policy_result.decision
+                                        == PolicyDecision.ALLOW
+                                    ):
+                                        policy_event_type = (
+                                            EventType.POLICY_ALLOWED
+                                        )
+
+                                    elif (
+                                        policy_result.decision
+                                        == PolicyDecision.APPROVAL_REQUIRED
+                                    ):
+                                        policy_event_type = (
+                                            EventType.POLICY_APPROVAL_REQUIRED
+                                        )
+
+                                    else:
+                                        policy_event_type = (
+                                            EventType.POLICY_BLOCKED
+                                        )
+
+
+                                    self.runtime.record_policy_decision(
+                                        runtime_step,
+                                        event_type=policy_event_type,
+                                        decision=(
+                                            policy_result.decision.value
+                                        ),
+                                        reason=policy_result.reason,
                                     )
 
                                     # =================================

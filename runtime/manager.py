@@ -339,6 +339,38 @@ class ExecutionRuntime:
         return step
 
     # =============================================
+    # POLICY STATE
+    # =============================================
+
+    def record_policy_decision(
+        self,
+        step: Step,
+        *,
+        event_type: EventType,
+        decision: str,
+        reason: str,
+    ) -> RuntimeEvent:
+        """
+        Persist the authorization decision made
+        for a proposed action.
+
+        This records policy semantics only.
+
+        It does not execute the action and does
+        not mutate the physical computer.
+        """
+
+        return self.record_event(
+            run_id=step.run_id,
+            step_id=step.step_id,
+            event_type=event_type,
+            data={
+                "decision": decision,
+                "reason": reason,
+            },
+        )
+
+    # =============================================
     # EVENTS
     # =============================================
 
