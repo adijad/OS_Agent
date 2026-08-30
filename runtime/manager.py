@@ -128,6 +128,53 @@ class ExecutionRuntime:
 
         return run
 
+    def block_run(
+        self,
+        run: Run,
+        outcome: str | None = None,
+    ) -> Run:
+        run.status = RunStatus.BLOCKED
+        run.completed_at = utc_now()
+        run.outcome = outcome
+
+        self.store.update_run(
+            run
+        )
+
+        self.record_event(
+            run_id=run.run_id,
+            event_type=EventType.RUN_BLOCKED,
+            data={
+                "outcome": outcome,
+            },
+        )
+
+        return run
+
+    def block_step(
+        self,
+        step: Step,
+        outcome: str | None = None,
+    ) -> Step:
+        step.status = StepStatus.BLOCKED
+        step.completed_at = utc_now()
+        step.outcome = outcome
+
+        self.store.update_step(
+            step
+        )
+
+        self.record_event(
+            run_id=step.run_id,
+            step_id=step.step_id,
+            event_type=EventType.STEP_BLOCKED,
+            data={
+                "outcome": outcome,
+            },
+        )
+
+        return step
+
     def fail_run(
         self,
         run: Run,

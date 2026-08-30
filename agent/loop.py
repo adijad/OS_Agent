@@ -752,13 +752,64 @@ class AgentLoop:
                                     # consequential rules are enabled.
                                     # =================================
 
+                                    # =================================
+                                    # POLICY ENFORCEMENT
+                                    # =================================
+
                                     if (
                                         policy_result.decision
-                                        != PolicyDecision.ALLOW
+                                        == PolicyDecision.BLOCK
                                     ):
+                                        run_status = "blocked"
+
+                                        block_reason = (
+                                            policy_result.reason
+                                        )
+
+                                        step_span.set_attribute(
+                                            "os_agent.step.outcome",
+                                            "blocked",
+                                        )
+
+                                        self.runtime.block_step(
+                                            runtime_step,
+                                            outcome=block_reason,
+                                        )
+
+                                        active_runtime_step = None
+
+                                        self.runtime.block_run(
+                                            runtime_run,
+                                            outcome=block_reason,
+                                        )
+
+                                        print(
+                                            "\n⛔ ACTION BLOCKED BY POLICY"
+                                        )
+
+                                        print(
+                                            f"Reason: {block_reason}"
+                                        )
+
+                                        return {
+                                            "status": "blocked",
+                                            "reason": block_reason,
+                                            "history": history,
+                                            "run_id": runtime_run.run_id,
+                                        }
+
+
+                                    if (
+                                        policy_result.decision
+                                        == PolicyDecision.APPROVAL_REQUIRED
+                                    ):
+                                        # Temporary behavior.
+                                        #
+                                        # HITL v1 will replace this with a proper
+                                        # WAITING_FOR_APPROVAL lifecycle.
                                         raise PolicyViolationError(
                                             (
-                                                f"{policy_result.decision.value}: "
+                                                "approval_required: "
                                                 f"{policy_result.reason}"
                                             )
                                         )
